@@ -1,0 +1,220 @@
+name: Release (Self-Hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      full-release:
+        description: 'When true, produce a full/stable release. Otherwise produce a prerelease.'
+        type: boolean
+        default: false
+        required: false
+      current-version:
+        description: 'Optional current/base version override (example: 1.2.0, 1.2.0-beta.2, or v1.2.0)'
+        default: ''
+        required: false
+      prerelease-identifier:
+        description: 'Identifier used for prereleases (example: beta, rc, alpha)'
+        default: 'rc'
+        required: true
+      llm-provider:
+        description: 'LLM provider'
+        default: 'openai'
+        required: true
+      model:
+        description: 'LLM model'
+        default: 'gpt-4o'
+        required: true
+      target-user-type:
+        description: 'Audience type for changelog output (user or developer)'
+        default: 'user'
+        required: true
+      user-focus:
+        description: 'Optional audience override phrase (example: CLI users)'
+        default: ''
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Compute next version
+        id: version
+        run: |
+          set -euo pipefail
+
+          full_release='${{ inputs.full-release }}'
+          prerelease_id='${{ inputs.prerelease-identifier }}'
+          current_input='${{ inputs.current-version }}'
+          semver_re='^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$'
+
+          if [[ "$full_release" == "true" ]]; then
+            release_type='full'
+          elif [[ "$full_release" == "false" ]]; then
+            release_type='prerelease'
+          else
+            echo "full-release must be true or false"
+            exit 1
+          fi
+
+          base_source=''
+
+          if [[ -n "$current_input" ]]; then
+            if [[ "$current_input" =~ ^v?([0-9]+)$ ]]; then
+              base_tag="${BASH_REMATCH[1]}.0.0"
+              base_source="input-major-alias"
+            else
+              base_tag="$current_input"
+              base_source="input"
+            fi
+          else
+            all_tags="$(git tag --sort=-v:refname)"
+            latest_semver=''
+            latest_major_alias=''
+
+            while IFS= read -r tag; do
+              [[ -z "$tag" ]] && continue
+              stripped="${tag#v}"
+              if [[ -z "$latest_semver" && "$stripped" =~ $semver_re ]]; then
+                latest_semver="$tag"
+              fi
+              if [[ -z "$latest_major_alias" && "$tag" =~ ^v([0-9]+)$ ]]; then
+                latest_major_alias="$tag"
+              fi
+              if [[ -n "$latest_semver" && -n "$latest_major_alias" ]]; then
+                break
+              fi
+            done <<< "$all_tags"
+
+            if [[ -n "$latest_semver" ]]; then
+              base_tag="$latest_semver"
+              base_source="latest-semver-tag"
+            elif [[ -n "$latest_major_alias" ]]; then
+              base_tag="${latest_major_alias#v}.0.0"
+              base_source="major-alias-bootstrap"
+            elif [[ -n "$all_tags" ]]; then
+              echo "No semver-compatible tags found. Provide current-version explicitly (for example 1.0.0)."
+              exit 1
+            else
+              base_tag='0.0.0'
+              base_source="no-tags-bootstrap"
+            fi
+          fi
+
+          base="${base_tag#v}"
+          if [[ ! "$base" =~ $semver_re ]]; then
+            echo "Could not parse semver from '$base_tag'"
+            exit 1
+          fi
+
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+          patch="${BASH_REMATCH[3]}"
+          pre="${BASH_REMATCH[5]:-}"
+
+          if [[ "$release_type" == "full" ]]; then
+            if [[ -n "$pre" ]]; then
+              next="${major}.${minor}.${patch}"
+            else
+              next="${major}.${minor}.$((patch + 1))"
+            fi
+            is_prerelease='false'
+          else
+            if [[ -n "$pre" ]]; then
+              if [[ "$pre" =~ ^([A-Za-z0-9-]+)\.([0-9]+)$ ]]; then
+                label="${BASH_REMATCH[1]}"
+                num="${BASH_REMATCH[2]}"
+                next="${major}.${minor}.${patch}-${label}.$((num + 1))"
+              else
+                next="${major}.${minor}.${patch}-${prerelease_id}.1"
+              fi
+            else
+              next="${major}.${minor}.$((patch + 1))-${prerelease_id}.1"
+            fi
+            is_prerelease='true'
+          fi
+
+          echo "base=${base}" >> "$GITHUB_OUTPUT"
+          echo "base_source=${base_source}" >> "$GITHUB_OUTPUT"
+          echo "release_type=${release_type}" >> "$GITHUB_OUTPUT"
+          echo "normalized=${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+
+      - name: Show release plan
+        run: |
+          echo "Base version: ${{ steps.version.outputs.base }}"
+          echo "Base source: ${{ steps.version.outputs.base_source }}"
+          echo "Full release: ${{ inputs.full-release }}"
+          echo "Release type: ${{ steps.version.outputs.release_type }}"
+          echo "Next version: ${{ steps.version.outputs.normalized }}"
+          echo "Tag: ${{ steps.version.outputs.tag }}"
+
+      - name: Update changelog using this action
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          llm-api-key: ${{ secrets.LLM_API_KEY }}
+          llm-provider: ${{ inputs.llm-provider }}
+          model: ${{ inputs.model }}
+          target-user-type: ${{ inputs.target-user-type }}
+          user-focus: ${{ inputs.user-focus }}
+          release-type: ${{ steps.version.outputs.release_type }}
+          version: ${{ steps.version.outputs.normalized }}
+          commit: true
+          commit-message: 'docs: update CHANGELOG.md for ${{ steps.version.outputs.tag }}'
+
+      - name: Create and push tag
+        run: |
+          git fetch --tags
+          tag='${{ steps.version.outputs.tag }}'
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Tag ${tag} already exists"
+            exit 1
+          fi
+          git tag -a "${tag}" -m "Release ${tag}"
+          git push origin "${tag}"
+
+      - name: Update major and minor action tags
+        if: ${{ steps.version.outputs.is_prerelease == 'false' }}
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.normalized }}'
+          release_tag='${{ steps.version.outputs.tag }}'
+
+          IFS='.' read -r major minor patch <<< "$version"
+          major_tag="v${major}"
+          minor_tag="v${major}.${minor}"
+
+          git tag -fa "$major_tag" -m "Update ${major_tag} to ${release_tag}"
+          git tag -fa "$minor_tag" -m "Update ${minor_tag} to ${release_tag}"
+
+          git push origin "refs/tags/${major_tag}" --force
+          git push origin "refs/tags/${minor_tag}" --force
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.is_prerelease }}

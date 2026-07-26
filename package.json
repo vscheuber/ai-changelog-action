@@ -4,6 +4,9 @@
   "description": "Reusable GitHub Action that updates CHANGELOG.md Unreleased section using an LLM",
   "main": "scripts/generate.js",
   "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.0",

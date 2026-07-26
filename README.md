@@ -26,22 +26,7 @@ This matches the workflow where you keep writing Unreleased / pre-release notes 
 
 ## Quick start
 
-### 1. Create the action repository
-
-Push this whole folder to a new repository, for example:
-
-```
-your-username/ai-changelog-action
-```
-
-Tag a release:
-
-```bash
-git tag v1
-git push origin v1
-```
-
-### 2. Use it in any other repository
+Use it in any repository:
 
 ```yaml
 # .github/workflows/update-changelog.yml
@@ -180,6 +165,46 @@ export VERSION=1.5.0
 
 node scripts/generate.js
 ```
+
+Run unit tests locally:
+
+```bash
+npm test
+```
+
+## Built-in CI and self-release pipeline
+
+This repository now includes two workflows:
+
+- `.github/workflows/ci.yml`: runs unit tests on every push to `main` and every pull request.
+- `.github/workflows/release-self.yml`: manual release pipeline that uses this action itself to update `CHANGELOG.md`, computes the next semver version from release type and current/latest version, tags it, and publishes a GitHub Release.
+
+### Required secrets for release-self workflow
+
+- `LLM_API_KEY`: your LLM provider key (OpenAI, Anthropic, etc.).
+
+### Running a self-release
+
+1. Open **Actions** in GitHub and run **Release (Self-Hosted)**.
+2. Set `full-release`:
+  - `false` (default): creates or increments a prerelease version.
+  - `true`: creates a full/stable release version.
+3. Optional: set `current-version` to override auto-detected latest tag.
+4. Optional: set `prerelease-identifier` (default `rc`, can be `beta`, `alpha`, etc.).
+5. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
+6. The workflow will test, compute next version, update changelog using this action, create the corresponding `v<version>` tag, and publish the release.
+7. On full releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
+
+### Versioning behavior in release-self workflow
+
+- If `release-type=prerelease` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)-<identifier>.1`.
+- If `release-type=prerelease` and latest/base is already prerelease `x.y.z-<label>.n`, next version is `x.y.z-<label>.(n+1)`.
+- If `release-type=full` and latest/base is prerelease `x.y.z-...`, next version is `x.y.z`.
+- If `release-type=full` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)`.
+- If only a major action tag exists (for example `v1`) and no semver tag exists yet, the workflow bootstraps from `1.0.0`.
+- If tags exist but none are semver-compatible, set `current-version` explicitly.
+
+Internally, `full-release=true` maps to `release-type=full` for the action, and `full-release=false` maps to `release-type=prerelease`.
 
 ### Audience guidance without custom prompts
 

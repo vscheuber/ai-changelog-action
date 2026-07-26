@@ -174,7 +174,7 @@ function extractChangelogSections(changelogContent, tags) {
     // Match ## [1.2.0-beta.1] or ## 1.2.0-beta.1 or ## v1.2.0-beta.1
     const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(
-      `^##?\\s*\\[?v?${escaped}\\]?.*?\\n([\\s\\S]*?)(?=^##?\\s+|\\Z)`,
+      `^##?\\s*\\[?v?${escaped}\\]?.*?\\n([\\s\\S]*?)(?=^##?\\s+|(?![\\s\\S]))`,
       'im'
     );
     const match = changelogContent.match(re);
@@ -204,7 +204,7 @@ async function getGitHubReleaseBodies(octokit, owner, repo, tags) {
 }
 
 function extractUnreleased(content) {
-  const match = content.match(/^##?\s+Unreleased\s*\n([\s\S]*?)(?=^##?\s+|\Z)/im);
+  const match = content.match(/^##?\s+Unreleased\s*\n([\s\S]*?)(?=^##?\s+|(?![\s\S]))/im);
   if (match) {
     return {
       fullMatch: match[0],
@@ -575,7 +575,16 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  core.setFailed(err.message);
-  console.error(err);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    core.setFailed(err.message);
+    console.error(err);
+  });
+}
+
+module.exports = {
+  isPreRelease,
+  extractUnreleased,
+  extractChangelogSections,
+  buildPrompt,
+};
