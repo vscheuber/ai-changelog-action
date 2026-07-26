@@ -1,5 +1,5 @@
 name: 'AI Changelog Updater'
-description: 'Updates the Unreleased section of CHANGELOG.md using an LLM. Gathers git history, PR descriptions, issues, and optional related repositories. When preparing a full release it also consolidates all pre-release changelog entries since the last stable release.'
+description: 'Updates CHANGELOG.md Unreleased notes from commits, PRs, issues, optional related repos, and prerelease consolidation'
 author: 'Volker Scheuber'
 
 branding:
