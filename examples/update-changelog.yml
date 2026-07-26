@@ -1,0 +1,58 @@
+# Example workflow – copy this into any repository as
+# .github/workflows/update-changelog.yml
+
+name: Update Changelog (Unreleased)
+
+on:
+  workflow_dispatch:          # run manually from the Actions tab
+  # Uncomment if you want it after every merge to main:
+  # push:
+  #   branches: [main]
+
+  # Or run automatically when a GitHub Release is published:
+  # release:
+  #   types: [published]
+
+permissions:
+  contents: write             # required when commit: true
+  pull-requests: read
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # full history needed for git log / tags
+
+      - name: AI Changelog Updater
+        uses: your-username/ai-changelog-action@v1   # ← change to your repo
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          llm-api-key: ${{ secrets.OPENAI_API_KEY }} # or ANTHROPIC_API_KEY
+          llm-provider: openai
+          model: gpt-4o
+
+          # Tailor these to each project
+          target-user-type: user
+          user-focus: "CLI users"
+          related-repos: "Frodo-org/frodo-lib"
+
+          # When cutting a full/stable release, set these so the action
+          # consolidates every pre-release changelog entry:
+          # release-type: full
+          # version: 1.5.0
+          # (or pass ${{ github.event.release.tag_name }} on a release event)
+
+          prompt-extra: |
+            Focus strictly on changes relevant to people who use the CLI.
+            When frodo-lib changes affect CLI behaviour, call them out.
+            Preserve any notes already present under Unreleased.
+
+          # Set to true while testing
+          # dry-run: true
+
+          # Automatically commit the result back to the branch
+          commit: true
+          commit-message: "docs: update CHANGELOG.md (Unreleased)"

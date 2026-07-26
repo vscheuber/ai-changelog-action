@@ -1,0 +1,118 @@
+name: 'AI Changelog Updater'
+description: 'Updates the Unreleased section of CHANGELOG.md using an LLM. Gathers git history, PR descriptions, issues, and optional related repositories. When preparing a full release it also consolidates all pre-release changelog entries since the last stable release.'
+author: 'Volker Scheuber'
+
+branding:
+  icon: 'file-text'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token with contents:read and pull-requests:read (and contents:write if you want the action to commit)'
+    required: true
+  llm-api-key:
+    description: 'API key for the LLM provider (OpenAI, Anthropic, etc.)'
+    required: true
+  llm-provider:
+    description: 'LLM provider to use'
+    required: false
+    default: 'openai'
+  model:
+    description: 'Model name for the selected provider (OpenAI: gpt-5, gpt-4.1, gpt-4o; Anthropic: claude-sonnet-4-20250514, claude-opus-4-20250514)'
+    required: false
+    default: 'gpt-4o'
+  changelog-path:
+    description: 'Path to the CHANGELOG.md file'
+    required: false
+    default: 'CHANGELOG.md'
+  since:
+    description: 'Git ref to start from. Use "last-release" (default) to automatically find the appropriate baseline, or provide a tag/commit SHA'
+    required: false
+    default: 'last-release'
+  related-repos:
+    description: 'Comma-separated list of related repositories in owner/repo format (e.g. "Frodo-org/frodo-lib"). Recent commits/PRs from these will be included in the LLM context.'
+    required: false
+    default: ''
+  target-user-type:
+    description: 'Primary audience type for generated notes: user | developer'
+    required: false
+    default: 'user'
+  user-focus:
+    description: 'Optional explicit audience override (e.g. "CLI users", "library consumers", "end users")'
+    required: false
+    default: ''
+  prompt-extra:
+    description: 'Additional instructions appended to the base prompt'
+    required: false
+    default: ''
+  release-type:
+    description: 'auto | full | prerelease. When "full" (or auto-detected as full) the action consolidates every pre-release changelog entry since the last stable release.'
+    required: false
+    default: 'auto'
+  version:
+    description: 'Optional version string being prepared (e.g. 2.1.0 or 2.1.0-beta.3). Helps the LLM and the auto-detection of full vs pre-release.'
+    required: false
+    default: ''
+  dry-run:
+    description: 'If true, only print the generated Unreleased section without writing to the file'
+    required: false
+    default: 'false'
+  commit:
+    description: 'If true, commit the updated CHANGELOG.md (requires contents:write permission)'
+    required: false
+    default: 'false'
+  commit-message:
+    description: 'Commit message used when commit=true'
+    required: false
+    default: 'docs: update CHANGELOG.md (Unreleased)'
+
+outputs:
+  changelog-updated:
+    description: 'Whether the CHANGELOG.md file was modified'
+    value: ${{ steps.generate.outputs.changelog-updated }}
+  unreleased-content:
+    description: 'The final Unreleased section content'
+    value: ${{ steps.generate.outputs.unreleased-content }}
+  is-full-release:
+    description: 'Whether the action treated this run as a full/stable release'
+    value: ${{ steps.generate.outputs.is-full-release }}
+  pre-release-tags:
+    description: 'Comma-separated list of pre-release tags that were consolidated (only set on full releases)'
+    value: ${{ steps.generate.outputs.pre-release-tags }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        cd ${{ github.action_path }}
+        npm install --omit=dev
+
+    - name: Generate / update CHANGELOG
+      id: generate
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        LLM_API_KEY: ${{ inputs.llm-api-key }}
+        LLM_PROVIDER: ${{ inputs.llm-provider }}
+        MODEL: ${{ inputs.model }}
+        CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        SINCE: ${{ inputs.since }}
+        RELATED_REPOS: ${{ inputs.related-repos }}
+        TARGET_USER_TYPE: ${{ inputs.target-user-type }}
+        USER_FOCUS: ${{ inputs.user-focus }}
+        PROMPT_EXTRA: ${{ inputs.prompt-extra }}
+        RELEASE_TYPE: ${{ inputs.release-type }}
+        VERSION: ${{ inputs.version }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        COMMIT: ${{ inputs.commit }}
+        COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+      run: node ${{ github.action_path }}/scripts/generate.js
