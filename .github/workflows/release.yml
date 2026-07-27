@@ -1,15 +1,14 @@
-name: Release (Self-Hosted)
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      full-release:
-        description: 'When true, produce a full/stable release. Otherwise produce a prerelease.'
-        type: boolean
-        default: false
-        required: false
+      release-type:
+        description: 'Release kind: prerelease | patch | minor | major'
+        default: 'prerelease'
+        required: true
       current-version:
-        description: 'Optional current/base version override (example: 1.2.0, 1.2.0-beta.2, or v1.2.0)'
+        description: 'Optional current/base version override (example: 1.2.0, 1.2.0-rc.2, or v1.2.0)'
         default: ''
         required: false
       prerelease-identifier:
@@ -63,19 +62,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          full_release='${{ inputs.full-release }}'
+          release_type='${{ inputs.release-type }}'
           prerelease_id='${{ inputs.prerelease-identifier }}'
           current_input='${{ inputs.current-version }}'
           semver_re='^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$'
 
-          if [[ "$full_release" == "true" ]]; then
-            release_type='full'
-          elif [[ "$full_release" == "false" ]]; then
-            release_type='prerelease'
-          else
-            echo "full-release must be true or false"
-            exit 1
-          fi
+          case "$release_type" in
+            prerelease|patch|minor|major) ;;
+            *)
+              echo "release-type must be one of: prerelease, patch, minor, major"
+              exit 1
+              ;;
+          esac
 
           base_source=''
 
@@ -132,14 +130,11 @@ jobs:
           patch="${BASH_REMATCH[3]}"
           pre="${BASH_REMATCH[5]:-}"
 
-          if [[ "$release_type" == "full" ]]; then
-            if [[ -n "$pre" ]]; then
-              next="${major}.${minor}.${patch}"
-            else
-              next="${major}.${minor}.$((patch + 1))"
-            fi
-            is_prerelease='false'
-          else
+          stable_major="$major"
+          stable_minor="$minor"
+          stable_patch="$patch"
+
+          if [[ "$release_type" == "prerelease" ]]; then
             if [[ -n "$pre" ]]; then
               if [[ "$pre" =~ ^([A-Za-z0-9-]+)\.([0-9]+)$ ]]; then
                 label="${BASH_REMATCH[1]}"
@@ -152,11 +147,29 @@ jobs:
               next="${major}.${minor}.$((patch + 1))-${prerelease_id}.1"
             fi
             is_prerelease='true'
+            action_release_type='prerelease'
+          elif [[ "$release_type" == "patch" ]]; then
+            if [[ -n "$pre" ]]; then
+              next="${stable_major}.${stable_minor}.${stable_patch}"
+            else
+              next="${major}.${minor}.$((patch + 1))"
+            fi
+            is_prerelease='false'
+            action_release_type='full'
+          elif [[ "$release_type" == "minor" ]]; then
+            next="${stable_major}.$((stable_minor + 1)).0"
+            is_prerelease='false'
+            action_release_type='full'
+          else
+            next="$((stable_major + 1)).0.0"
+            is_prerelease='false'
+            action_release_type='full'
           fi
 
           echo "base=${base}" >> "$GITHUB_OUTPUT"
           echo "base_source=${base_source}" >> "$GITHUB_OUTPUT"
           echo "release_type=${release_type}" >> "$GITHUB_OUTPUT"
+          echo "action_release_type=${action_release_type}" >> "$GITHUB_OUTPUT"
           echo "normalized=${next}" >> "$GITHUB_OUTPUT"
           echo "tag=v${next}" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
@@ -165,8 +178,8 @@ jobs:
         run: |
           echo "Base version: ${{ steps.version.outputs.base }}"
           echo "Base source: ${{ steps.version.outputs.base_source }}"
-          echo "Full release: ${{ inputs.full-release }}"
           echo "Release type: ${{ steps.version.outputs.release_type }}"
+          echo "Action release-type: ${{ steps.version.outputs.action_release_type }}"
           echo "Next version: ${{ steps.version.outputs.normalized }}"
           echo "Tag: ${{ steps.version.outputs.tag }}"
 
@@ -179,13 +192,63 @@ jobs:
           model: ${{ inputs.model }}
           target-user-type: ${{ inputs.target-user-type }}
           user-focus: ${{ inputs.user-focus }}
-          release-type: ${{ steps.version.outputs.release_type }}
+          release-type: ${{ steps.version.outputs.action_release_type }}
           version: ${{ steps.version.outputs.normalized }}
-          commit: true
-          commit-message: 'docs: update CHANGELOG.md for ${{ steps.version.outputs.tag }}'
+          commit: false
+
+      - name: Promote Unreleased section and extract release notes
+        id: changelog
+        env:
+          CHANGELOG_PATH: CHANGELOG.md
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = process.env.CHANGELOG_PATH || 'CHANGELOG.md';
+          const tag = process.env.RELEASE_TAG;
+          const date = new Date().toISOString().slice(0, 10);
+
+          if (!fs.existsSync(path)) {
+            throw new Error(`${path} does not exist`);
+          }
+
+          const content = fs.readFileSync(path, 'utf8');
+          const match = content.match(/^##?\s+Unreleased\s*\n([\s\S]*?)(?=^##?\s+|(?![\s\S]))/im);
+          if (!match) {
+            throw new Error('Could not find an Unreleased section in CHANGELOG.md');
+          }
+
+          const unreleasedBody = match[1].trim();
+          const releaseBody = unreleasedBody || '- No user-facing changes.';
+          const releaseHeading = `## [${tag}] - ${date}`;
+
+          if (content.includes(releaseHeading)) {
+            throw new Error(`Release heading already exists: ${releaseHeading}`);
+          }
+
+          const replacement = `## Unreleased\n\n${releaseHeading}\n\n${releaseBody}\n\n`;
+          const updated = content.replace(match[0], replacement).replace(/\n{3,}/g, '\n\n');
+
+          fs.writeFileSync(path, updated, 'utf8');
+          fs.writeFileSync('RELEASE_NOTES.md', releaseBody + '\n', 'utf8');
+          NODE
+
+      - name: Commit changelog changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "No changelog changes to commit"
+          else
+            git commit -m "docs: update CHANGELOG.md for ${{ steps.version.outputs.tag }}"
+            git push origin HEAD
+          fi
 
       - name: Create and push tag
         run: |
+          set -euo pipefail
           git fetch --tags
           tag='${{ steps.version.outputs.tag }}'
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
@@ -216,5 +279,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.version.outputs.is_prerelease }}

@@ -177,34 +177,36 @@ npm test
 This repository now includes two workflows:
 
 - `.github/workflows/ci.yml`: runs unit tests on every push to `main` and every pull request.
-- `.github/workflows/release-self.yml`: manual release pipeline that uses this action itself to update `CHANGELOG.md`, computes the next semver version from release type and current/latest version, tags it, and publishes a GitHub Release.
+- `.github/workflows/release.yml`: manual release pipeline that uses this action itself to update changelog content, promotes `Unreleased` into a versioned section, computes the next semver version from release type and current/latest version, tags it, and publishes a GitHub Release from that release section.
 
-### Required secrets for release-self workflow
+### Required secrets for release workflow
 
 - `LLM_API_KEY`: your LLM provider key (OpenAI, Anthropic, etc.).
 
 ### Running a self-release
 
-1. Open **Actions** in GitHub and run **Release (Self-Hosted)**.
-2. Set `full-release`:
-  - `false` (default): creates or increments a prerelease version.
-  - `true`: creates a full/stable release version.
+1. Open **Actions** in GitHub and run **Release**.
+2. Choose `release-type`:
+  - `prerelease` (default): creates or increments a prerelease version.
+  - `patch`: creates a full patch release.
+  - `minor`: creates a full minor release.
+  - `major`: creates a full major release.
 3. Optional: set `current-version` to override auto-detected latest tag.
 4. Optional: set `prerelease-identifier` (default `rc`, can be `beta`, `alpha`, etc.).
 5. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
-6. The workflow will test, compute next version, update changelog using this action, create the corresponding `v<version>` tag, and publish the release.
-7. On full releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
+6. The workflow will test, compute next version, update changelog content, move `Unreleased` into `## [v<version>] - <date>`, create the corresponding `v<version>` tag, and publish the release using that section as the release body.
+7. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
 
-### Versioning behavior in release-self workflow
+### Versioning behavior in release workflow
 
 - If `release-type=prerelease` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)-<identifier>.1`.
 - If `release-type=prerelease` and latest/base is already prerelease `x.y.z-<label>.n`, next version is `x.y.z-<label>.(n+1)`.
-- If `release-type=full` and latest/base is prerelease `x.y.z-...`, next version is `x.y.z`.
-- If `release-type=full` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)`.
+- If `release-type=patch` and latest/base is prerelease `x.y.z-...`, next version is `x.y.z`.
+- If `release-type=patch` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)`.
+- If `release-type=minor`, next version is `x.(y+1).0`.
+- If `release-type=major`, next version is `(x+1).0.0`.
 - If only a major action tag exists (for example `v1`) and no semver tag exists yet, the workflow bootstraps from `1.0.0`.
 - If tags exist but none are semver-compatible, set `current-version` explicitly.
-
-Internally, `full-release=true` maps to `release-type=full` for the action, and `full-release=false` maps to `release-type=prerelease`.
 
 ### Audience guidance without custom prompts
 
