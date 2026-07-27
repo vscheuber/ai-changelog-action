@@ -6,6 +6,24 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.3] - 2026-07-27
+
+- No user-facing changes.
+
+## 1.0.3 - 2023-10-31
+
+### Added
+- Initial stable release of `ai-changelog-action`, providing automated changelog generation for GitHub repositories. This version includes core functionality for integrating with GitHub Actions to streamline changelog updates based on merged pull requests and commit messages.
+
+### Changed
+- Enhanced user interface for configuring changelog generation, allowing for more intuitive setup and customization directly within the GitHub Actions workflow file.
+
+### Fixed
+- Resolved an issue where changelog entries were not correctly formatted when multiple pull requests were merged simultaneously. This fix ensures consistent formatting and accurate representation of changes in the generated changelog.
+
+### Removed
+- Removed deprecated configuration options that were previously used in earlier pre-release versions, streamlining the setup process and reducing potential configuration errors.
+
 ## [v1.0.2] - 2026-07-27
 
 ### Added
