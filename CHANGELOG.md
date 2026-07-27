@@ -6,6 +6,16 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+### Added
+- Introduced a self-release pipeline to automate the release process, including tests and changelog bootstrap. This enhancement streamlines the workflow for maintaining and releasing new versions. (#81a4029)
+- Added comprehensive tests for the new self-release pipeline to ensure reliability and stability. (#81a4029)
+
+### Changed
+- Updated `action.yml` description for improved clarity, making it easier for users to understand the purpose and usage of the action. (#a651689)
+
+### Documentation
+- Enhanced `README.md` with additional information to better guide users on how to utilize the tool effectively. (#81a4029)
+
 ## 1.0.0 - 2026-07-26
 
 ### Added
