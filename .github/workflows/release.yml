@@ -184,6 +184,7 @@ jobs:
           echo "Tag: ${{ steps.version.outputs.tag }}"
 
       - name: Update changelog using this action
+        id: changelog
         uses: ./
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -197,7 +198,7 @@ jobs:
           commit: false
 
       - name: Promote Unreleased section and extract release notes
-        id: changelog
+        id: promote
         env:
           CHANGELOG_PATH: CHANGELOG.md
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -219,6 +220,11 @@ jobs:
           }
 
           const unreleasedBody = match[1].trim();
+          const normalizedBody = unreleasedBody.replace(/\r\n/g, '\n').trim();
+          if (!normalizedBody || normalizedBody === '- No user-facing changes.') {
+            throw new Error('No changelog changes detected under Unreleased; aborting release.');
+          }
+
           const releaseBody = unreleasedBody || '- No user-facing changes.';
           const releaseHeading = `## [${tag}] - ${date}`;
 
