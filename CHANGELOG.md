@@ -6,6 +6,17 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.5] - 2026-07-28
+
+### Added
+- Default prerelease tags now use a numeric format, simplifying version management and enhancing the consistency and predictability of version identifiers. (#e47bff3)
+
+### Changed
+- Updated GitHub Actions workflows to eliminate runtime warnings for Node 20, improving compatibility and reducing noise in CI/CD logs.
+
+### Fixed
+- The prerelease identifier in the release dispatch workflow is now optional, providing more flexibility in release processes and resolving issues where a mandatory identifier was previously required. (#757eebc)
+
 ## [v1.0.5-rc.2] - 2026-07-28
 
 ### Added
