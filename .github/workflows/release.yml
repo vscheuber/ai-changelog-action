@@ -7,6 +7,11 @@ on:
         description: 'Release kind: prerelease | patch | minor | major'
         default: 'prerelease'
         required: true
+      force-release:
+        description: 'When true, allow a release even if there are no new commits since the last comparable release tag'
+        type: boolean
+        default: false
+        required: false
       current-version:
         description: 'Optional current/base version override (example: 1.2.0, 1.2.0-rc.2, or v1.2.0)'
         default: ''
@@ -76,14 +81,25 @@ jobs:
           esac
 
           base_source=''
+          base_ref=''
 
           if [[ -n "$current_input" ]]; then
             if [[ "$current_input" =~ ^v?([0-9]+)$ ]]; then
               base_tag="${BASH_REMATCH[1]}.0.0"
               base_source="input-major-alias"
+              base_ref="v${BASH_REMATCH[1]}"
             else
               base_tag="$current_input"
               base_source="input"
+
+              candidate1="$current_input"
+              candidate2="v${current_input#v}"
+              for c in "$candidate1" "$candidate2"; do
+                if git rev-parse -q --verify "refs/tags/${c}" >/dev/null; then
+                  base_ref="$c"
+                  break
+                fi
+              done
             fi
           else
             all_tags="$(git tag --sort=-v:refname)"
@@ -107,9 +123,11 @@ jobs:
             if [[ -n "$latest_semver" ]]; then
               base_tag="$latest_semver"
               base_source="latest-semver-tag"
+              base_ref="$latest_semver"
             elif [[ -n "$latest_major_alias" ]]; then
               base_tag="${latest_major_alias#v}.0.0"
               base_source="major-alias-bootstrap"
+              base_ref="$latest_major_alias"
             elif [[ -n "$all_tags" ]]; then
               echo "No semver-compatible tags found. Provide current-version explicitly (for example 1.0.0)."
               exit 1
@@ -168,6 +186,7 @@ jobs:
 
           echo "base=${base}" >> "$GITHUB_OUTPUT"
           echo "base_source=${base_source}" >> "$GITHUB_OUTPUT"
+          echo "base_ref=${base_ref}" >> "$GITHUB_OUTPUT"
           echo "release_type=${release_type}" >> "$GITHUB_OUTPUT"
           echo "action_release_type=${action_release_type}" >> "$GITHUB_OUTPUT"
           echo "normalized=${next}" >> "$GITHUB_OUTPUT"
@@ -178,10 +197,47 @@ jobs:
         run: |
           echo "Base version: ${{ steps.version.outputs.base }}"
           echo "Base source: ${{ steps.version.outputs.base_source }}"
+          echo "Base ref: ${{ steps.version.outputs.base_ref || '(none)' }}"
           echo "Release type: ${{ steps.version.outputs.release_type }}"
           echo "Action release-type: ${{ steps.version.outputs.action_release_type }}"
+          echo "Force release: ${{ inputs.force-release }}"
           echo "Next version: ${{ steps.version.outputs.normalized }}"
           echo "Tag: ${{ steps.version.outputs.tag }}"
+
+      - name: Abort if no new commits since last release
+        id: commit_gate
+        run: |
+          set -euo pipefail
+
+          force_release='${{ inputs.force-release }}'
+          base_ref='${{ steps.version.outputs.base_ref }}'
+
+          if [[ "$force_release" == "true" ]]; then
+            echo "force-release=true, skipping commit-count gate"
+            echo "commit_count=forced" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "$base_ref" ]]; then
+            echo "No comparable base release tag found; allowing release."
+            echo "commit_count=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git rev-parse -q --verify "refs/tags/${base_ref}" >/dev/null; then
+            echo "Base reference '${base_ref}' is not an existing tag; allowing release."
+            echo "commit_count=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          commit_count="$(git rev-list --count "${base_ref}..HEAD")"
+          echo "Commits since ${base_ref}: ${commit_count}"
+          echo "commit_count=${commit_count}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$commit_count" -eq 0 ]]; then
+            echo "No new commits since ${base_ref}. Aborting release. Set force-release=true to override."
+            exit 1
+          fi
 
       - name: Update changelog using this action
         id: changelog

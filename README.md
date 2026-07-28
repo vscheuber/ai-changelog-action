@@ -191,11 +191,12 @@ This repository now includes two workflows:
   - `patch`: creates a full patch release.
   - `minor`: creates a full minor release.
   - `major`: creates a full major release.
-3. Optional: set `current-version` to override auto-detected latest tag.
-4. Optional: set `prerelease-identifier` (default `rc`, can be `beta`, `alpha`, etc.).
-5. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
-6. The workflow will test, compute next version, update changelog content, move `Unreleased` into `## [v<version>] - <date>`, create the corresponding `v<version>` tag, and publish the release using that section as the release body.
-7. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
+3. Optional: set `force-release=true` to allow releasing when there are no new commits since the last comparable release tag.
+4. Optional: set `current-version` to override auto-detected latest tag.
+5. Optional: set `prerelease-identifier` (default `rc`, can be `beta`, `alpha`, etc.).
+6. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
+7. The workflow will test, compute next version, verify there are new commits since the last comparable release tag (unless forced), update changelog content, move `Unreleased` into `## [v<version>] - <date>`, create the corresponding `v<version>` tag, and publish the release using that section as the release body.
+8. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
 
 ### Versioning behavior in release workflow
 
@@ -207,6 +208,11 @@ This repository now includes two workflows:
 - If `release-type=major`, next version is `(x+1).0.0`.
 - If only a major action tag exists (for example `v1`) and no semver tag exists yet, the workflow bootstraps from `1.0.0`.
 - If tags exist but none are semver-compatible, set `current-version` explicitly.
+
+Release guard behavior:
+
+- By default, the workflow aborts when there are no commits since the last comparable release tag.
+- Set `force-release=true` to bypass this guard.
 
 ### Audience guidance without custom prompts
 
