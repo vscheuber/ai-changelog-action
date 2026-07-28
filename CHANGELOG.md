@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.5-rc.1] - 2026-07-28
+
+### Changed
+- Updated GitHub Actions workflows to eliminate runtime warnings for Node 20, enhancing compatibility and reducing noise in CI/CD logs.
+
 ## [v1.0.4] - 2026-07-28
 
 ### Added
