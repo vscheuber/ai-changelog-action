@@ -193,15 +193,16 @@ This repository now includes two workflows:
   - `major`: creates a full major release.
 3. Optional: set `force-release=true` to allow releasing when there are no new commits since the last comparable release tag.
 4. Optional: set `current-version` to override auto-detected latest tag.
-5. Optional: set `prerelease-identifier` (default `rc`, can be `beta`, `alpha`, etc.).
+5. Optional: set `prerelease-identifier` (default empty for numeric prereleases like `-1`, `-2`; can be `rc`, `beta`, `alpha`, etc.).
 6. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
 7. The workflow will test, compute next version, verify there are new commits since the last comparable release tag (unless forced), update changelog content, move `Unreleased` into `## [v<version>] - <date>`, create the corresponding `v<version>` tag, and publish the release using that section as the release body.
 8. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
 
 ### Versioning behavior in release workflow
 
-- If `release-type=prerelease` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)-<identifier>.1`.
-- If `release-type=prerelease` and latest/base is already prerelease `x.y.z-<label>.n`, next version is `x.y.z-<label>.(n+1)`.
+- If `release-type=prerelease` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)-1` by default (or `x.y.(z+1)-<identifier>.1` when `prerelease-identifier` is set).
+- If `release-type=prerelease` and latest/base is already numeric prerelease `x.y.z-n`, next version is `x.y.z-(n+1)`.
+- If `release-type=prerelease` and latest/base is labeled prerelease `x.y.z-<label>.n`, next version is `x.y.z-<label>.(n+1)`.
 - If `release-type=patch` and latest/base is prerelease `x.y.z-...`, next version is `x.y.z`.
 - If `release-type=patch` and latest/base is stable `x.y.z`, next version is `x.y.(z+1)`.
 - If `release-type=minor`, next version is `x.(y+1).0`.

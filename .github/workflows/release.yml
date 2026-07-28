@@ -17,8 +17,8 @@ on:
         default: ''
         required: false
       prerelease-identifier:
-        description: 'Identifier used for prereleases (example: beta, rc, alpha)'
-        default: 'rc'
+        description: 'Optional identifier for prereleases (example: beta, rc, alpha). Leave empty for numeric prereleases like -1, -2.'
+        default: ''
         required: true
       llm-provider:
         description: 'LLM provider'
@@ -154,15 +154,26 @@ jobs:
 
           if [[ "$release_type" == "prerelease" ]]; then
             if [[ -n "$pre" ]]; then
-              if [[ "$pre" =~ ^([A-Za-z0-9-]+)\.([0-9]+)$ ]]; then
+              if [[ "$pre" =~ ^([0-9]+)$ ]]; then
+                num="${BASH_REMATCH[1]}"
+                next="${major}.${minor}.${patch}-$((num + 1))"
+              elif [[ "$pre" =~ ^([A-Za-z0-9-]+)\.([0-9]+)$ ]]; then
                 label="${BASH_REMATCH[1]}"
                 num="${BASH_REMATCH[2]}"
                 next="${major}.${minor}.${patch}-${label}.$((num + 1))"
               else
-                next="${major}.${minor}.${patch}-${prerelease_id}.1"
+                if [[ -n "$prerelease_id" ]]; then
+                  next="${major}.${minor}.${patch}-${prerelease_id}.1"
+                else
+                  next="${major}.${minor}.${patch}-1"
+                fi
               fi
             else
-              next="${major}.${minor}.$((patch + 1))-${prerelease_id}.1"
+              if [[ -n "$prerelease_id" ]]; then
+                next="${major}.${minor}.$((patch + 1))-${prerelease_id}.1"
+              else
+                next="${major}.${minor}.$((patch + 1))-1"
+              fi
             fi
             is_prerelease='true'
             action_release_type='prerelease'
