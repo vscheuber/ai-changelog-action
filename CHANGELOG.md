@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.4] - 2026-07-28
+
+### Added
+- Introduced a `force-release` commit gate to the release workflow, allowing users to trigger a release even if there are no changes since the last release. This provides more control over the release process. (#efc71fc)
+
+### Fixed
+- The release pipeline now correctly fails when the changelog is empty, ensuring that releases are only made when there are documented changes. (#5e0d7bd)
+
 ## [v1.0.3] - 2026-07-27
 
 - No user-facing changes.
