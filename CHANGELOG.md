@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.5-rc.2] - 2026-07-28
+
+### Added
+- Default prerelease tags now use a numeric format, simplifying version management for users. This change enhances the consistency and predictability of version identifiers. (#e47bff3)
+
+### Fixed
+- The prerelease identifier in the release dispatch workflow is now optional, allowing for more flexible release processes. This fix resolves issues where a mandatory identifier was previously required. (#757eebc)
+
 ## [v1.0.5-rc.1] - 2026-07-28
 
 ### Changed
