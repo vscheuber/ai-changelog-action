@@ -19,7 +19,7 @@ on:
       prerelease-identifier:
         description: 'Optional identifier for prereleases (example: beta, rc, alpha). Leave empty for numeric prereleases like -1, -2.'
         default: ''
-        required: true
+        required: false
       llm-provider:
         description: 'LLM provider'
         default: 'openai'
