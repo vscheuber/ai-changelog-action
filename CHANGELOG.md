@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.4] - 2026-08-01
+
+### Added
+- Added functions to filter grounded release notes and build deterministic commit notes, with accompanying tests to ensure functionality and reliability. (commit 63e70ad)
+
 ## [v1.1.3] - 2026-08-01
 
 ### Added
