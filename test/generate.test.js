@@ -5,6 +5,7 @@ const {
   isPreRelease,
   isStableSemverTag,
   normalizeGeneratedBody,
+  removeDuplicateReleaseLines,
   hasMeaningfulReleaseInput,
   isFunctionalActionPath,
   classifyReleaseFallback,
@@ -120,6 +121,42 @@ test('buildFallbackReleaseNotes returns deterministic internal release notes', (
   assert.match(buildFallbackReleaseNotes('pipeline-only'), /pipeline update release|Internal pipeline update release/i);
   assert.match(buildFallbackReleaseNotes('internal-only'), /Internal changes only/);
   assert.match(buildFallbackReleaseNotes('cosmetic-release'), /Cosmetic version update release/);
+});
+
+test('removeDuplicateReleaseLines removes bullets already present in previous release notes', () => {
+  const current = [
+    '### Added',
+    '- Existing capability from previous release. (#27)',
+    '- Truly new capability. (commit abcdef1)',
+  ].join('\n');
+
+  const previous = [
+    '### Added',
+    '- Existing capability from previous release.',
+  ].join('\n');
+
+  const deduped = removeDuplicateReleaseLines(current, previous);
+  assert.doesNotMatch(deduped, /Existing capability from previous release/);
+  assert.match(deduped, /Truly new capability/);
+});
+
+test('removeDuplicateReleaseLines strips empty from pre-releases headings when not applicable', () => {
+  const current = [
+    '### Added',
+    '- Truly new capability.',
+    '',
+    '### Added (from pre-releases)',
+    '- Existing capability from previous release.',
+  ].join('\n');
+
+  const previous = [
+    '### Added',
+    '- Existing capability from previous release.',
+  ].join('\n');
+
+  const deduped = removeDuplicateReleaseLines(current, previous);
+  assert.doesNotMatch(deduped, /from pre-releases/);
+  assert.match(deduped, /Truly new capability/);
 });
 
 test('extractUnreleased returns section boundaries and body', () => {

@@ -78,6 +78,86 @@ function normalizeGeneratedBody(body) {
   return lines.join('\n').trim();
 }
 
+function normalizeComparableLine(line) {
+  return line
+    .replace(/`[^`]+`/g, '')
+    .replace(/\((?:commit\s+)?[0-9a-f]{7,}\)/ig, '')
+    .replace(/\(#\d+\)/g, '')
+    .replace(/#([0-9]+)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.:;!,]+$/g, '')
+    .toLowerCase();
+}
+
+function getBulletLines(body) {
+  if (!body) return [];
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^-\s+/.test(line));
+}
+
+function removeDuplicateReleaseLines(body, previousReleaseBody) {
+  if (!body || !previousReleaseBody) return body;
+
+  const previousBulletSet = new Set(
+    getBulletLines(previousReleaseBody)
+      .map((line) => normalizeComparableLine(line))
+      .filter(Boolean)
+  );
+
+  if (!previousBulletSet.size) return body;
+
+  const lines = body.split('\n');
+  const filtered = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^###\s+.+\(from pre-releases\)\s*$/i.test(trimmed)) {
+      continue;
+    }
+
+    if (/^-\s+/.test(trimmed)) {
+      const normalized = normalizeComparableLine(trimmed);
+      if (normalized && previousBulletSet.has(normalized)) {
+        continue;
+      }
+    }
+
+    filtered.push(line);
+  }
+
+  const compacted = [];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const line = filtered[index];
+    const trimmed = line.trim();
+
+    if (/^###\s+/.test(trimmed)) {
+      let hasBullet = false;
+      for (let lookahead = index + 1; lookahead < filtered.length; lookahead += 1) {
+        const nextTrimmed = filtered[lookahead].trim();
+        if (/^###\s+/.test(nextTrimmed)) break;
+        if (/^-\s+/.test(nextTrimmed)) {
+          hasBullet = true;
+          break;
+        }
+      }
+      if (!hasBullet) {
+        continue;
+      }
+    }
+
+    if (trimmed === '' && compacted[compacted.length - 1] === '') {
+      continue;
+    }
+
+    compacted.push(line);
+  }
+
+  return compacted.join('\n').trim();
+}
+
 function hasRelatedActivity(related) {
   return related.some((entry) => (entry.commits && entry.commits.length) || (entry.prs && entry.prs.length));
 }
@@ -733,6 +813,9 @@ async function main() {
     .replace(/\n?```$/i, '')
     .trim();
   newBody = normalizeGeneratedBody(newBody);
+  if (!preReleaseNotes.length) {
+    newBody = removeDuplicateReleaseLines(newBody, previousReleaseNotes);
+  }
 
   core.info('--- Generated Unreleased content ---');
   core.info(newBody);
@@ -820,6 +903,7 @@ module.exports = {
   isPreRelease,
   isStableSemverTag,
   normalizeGeneratedBody,
+  removeDuplicateReleaseLines,
   hasMeaningfulReleaseInput,
   getChangedFilesSince,
   isFunctionalActionPath,
