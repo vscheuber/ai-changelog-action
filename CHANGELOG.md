@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.8-1] - 2026-08-01
+
+### Added
+- Support for promoting Unreleased content to a versioned changelog section, streamlining the release process and ensuring accurate documentation of changes. This enhancement improves workflow efficiency for users managing changelog updates. (commit 49efe6f)
+
 ## [v1.0.7] - 2026-08-01
 
 ### Added
