@@ -7,35 +7,6 @@ on:
         description: 'Release kind: prerelease | patch | minor | major'
         default: 'prerelease'
         required: true
-      force-release:
-        description: 'When true, allow a release even if there are no new commits since the last comparable release tag'
-        type: boolean
-        default: false
-        required: false
-      current-version:
-        description: 'Optional current/base version override (example: 1.2.0, 1.2.0-rc.2, or v1.2.0)'
-        default: ''
-        required: false
-      prerelease-identifier:
-        description: 'Optional identifier for prereleases (example: beta, rc, alpha). Leave empty for numeric prereleases like -1, -2.'
-        default: ''
-        required: false
-      llm-provider:
-        description: 'LLM provider'
-        default: 'openai'
-        required: true
-      model:
-        description: 'LLM model'
-        default: 'gpt-4o'
-        required: true
-      target-user-type:
-        description: 'Audience type for changelog output (user or developer)'
-        default: 'user'
-        required: true
-      user-focus:
-        description: 'Optional audience override phrase (example: CLI users)'
-        default: ''
-        required: false
 
 permissions:
   contents: write
@@ -67,8 +38,6 @@ jobs:
         uses: vscheuber/version-bump-action@v1
         with:
           release-type: ${{ inputs.release-type }}
-          current-version: ${{ inputs.current-version }}
-          prerelease-identifier: ${{ inputs.prerelease-identifier }}
 
       - name: Show release plan
         run: |
@@ -76,44 +45,8 @@ jobs:
           echo "Base source: ${{ steps.version.outputs.base_source }}"
           echo "Base ref: ${{ steps.version.outputs.base_ref || '(none)' }}"
           echo "Action release-type: ${{ steps.version.outputs.action_release_type }}"
-          echo "Force release: ${{ inputs.force-release }}"
           echo "Next version: ${{ steps.version.outputs.normalized }}"
           echo "Tag: ${{ steps.version.outputs.tag }}"
-
-      - name: Abort if no new commits since last release
-        id: commit_gate
-        run: |
-          set -euo pipefail
-
-          force_release='${{ inputs.force-release }}'
-          base_ref='${{ steps.version.outputs.base_ref }}'
-
-          if [[ "$force_release" == "true" ]]; then
-            echo "force-release=true, skipping commit-count gate"
-            echo "commit_count=forced" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ -z "$base_ref" ]]; then
-            echo "No comparable base release tag found; allowing release."
-            echo "commit_count=unknown" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if ! git rev-parse -q --verify "refs/tags/${base_ref}" >/dev/null; then
-            echo "Base reference '${base_ref}' is not an existing tag; allowing release."
-            echo "commit_count=unknown" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          commit_count="$(git rev-list --count "${base_ref}..HEAD")"
-          echo "Commits since ${base_ref}: ${commit_count}"
-          echo "commit_count=${commit_count}" >> "$GITHUB_OUTPUT"
-
-          if [[ "$commit_count" -eq 0 ]]; then
-            echo "No new commits since ${base_ref}. Aborting release. Set force-release=true to override."
-            exit 1
-          fi
 
       - name: Update changelog using this action
         id: changelog
@@ -121,10 +54,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           llm-api-key: ${{ secrets.LLM_API_KEY }}
-          llm-provider: ${{ inputs.llm-provider }}
-          model: ${{ inputs.model }}
-          target-user-type: ${{ inputs.target-user-type }}
-          user-focus: ${{ inputs.user-focus }}
+          llm-provider: openai
+          model: gpt-4o
+          target-user-type: user
           release-type: ${{ steps.version.outputs.action_release_type }}
           version: ${{ steps.version.outputs.normalized }}
           commit: false
