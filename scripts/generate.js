@@ -78,6 +78,21 @@ function normalizeGeneratedBody(body) {
   return lines.join('\n').trim();
 }
 
+function hasRelatedActivity(related) {
+  return related.some((entry) => (entry.commits && entry.commits.length) || (entry.prs && entry.prs.length));
+}
+
+function hasMeaningfulReleaseInput({ commits, diffStat, prs, related, preReleaseNotes, existingBody }) {
+  return Boolean(
+    (commits && commits.trim())
+    || (diffStat && diffStat.trim())
+    || (prs && prs.length)
+    || hasRelatedActivity(related || [])
+    || (preReleaseNotes && preReleaseNotes.length)
+    || (existingBody && existingBody.trim())
+  );
+}
+
 function getAllTags() {
   // Newest first
   const raw = run('git tag --sort=-creatordate');
@@ -582,6 +597,18 @@ async function main() {
   // ------------------------------------------------------------------
   // 5. Build prompt & call LLM
   // ------------------------------------------------------------------
+  if (promoteRelease && !hasMeaningfulReleaseInput({
+    commits,
+    diffStat,
+    prs,
+    related,
+    preReleaseNotes,
+    existingBody,
+  })) {
+    core.setFailed(`No release changes detected since ${sinceRef || 'repository start'}`);
+    return;
+  }
+
   core.info(`Calling ${provider} (${model})…`);
   const prompt = buildPrompt({
     repo: process.env.GITHUB_REPOSITORY,
@@ -699,6 +726,7 @@ module.exports = {
   isPreRelease,
   isStableSemverTag,
   normalizeGeneratedBody,
+  hasMeaningfulReleaseInput,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,

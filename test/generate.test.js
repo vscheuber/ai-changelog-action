@@ -5,6 +5,7 @@ const {
   isPreRelease,
   isStableSemverTag,
   normalizeGeneratedBody,
+  hasMeaningfulReleaseInput,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,
@@ -39,6 +40,32 @@ test('normalizeGeneratedBody strips accidental heading from LLM output', () => {
 
   const normalized = normalizeGeneratedBody(raw);
   assert.equal(normalized, '### Added\n- Important change');
+});
+
+test('hasMeaningfulReleaseInput is false when there are no changes to release', () => {
+  assert.equal(
+    hasMeaningfulReleaseInput({
+      commits: '',
+      diffStat: '',
+      prs: [],
+      related: [],
+      preReleaseNotes: [],
+      existingBody: '',
+    }),
+    false
+  );
+
+  assert.equal(
+    hasMeaningfulReleaseInput({
+      commits: 'abc123 fix release logic',
+      diffStat: '',
+      prs: [],
+      related: [],
+      preReleaseNotes: [],
+      existingBody: '',
+    }),
+    true
+  );
 });
 
 test('extractUnreleased returns section boundaries and body', () => {
