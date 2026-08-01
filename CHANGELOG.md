@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.5] - 2026-08-01
+
+### Changed
+- Refactored `getPreReleaseTagsSinceLastFull` to accept tags as a parameter, enhancing flexibility and testability. (commit d0bd519)
+
 ## [v1.1.4] - 2026-08-01
 
 ### Added
