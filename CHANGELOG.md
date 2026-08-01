@@ -6,6 +6,18 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.2] - 2026-08-01
+
+### Added
+- Enhanced `buildPrompt` functionality to include previous release notes and guidelines, preventing the restatement of changes across releases. This improvement aids in maintaining concise and relevant changelog entries. (commit 4e07f06)
+
+### Added (from pre-releases)
+- Implemented stable semantic versioning (semver) tag detection to improve version management and ensure consistent versioning practices. (#27e7827)
+- Enhanced changelog generation by normalizing the output from the language model, leading to clearer and more consistent changelog entries. (#27e7827)
+- Added support for promoting Unreleased content to a versioned changelog section, streamlining the release process and ensuring accurate documentation of changes. This enhancement improves workflow efficiency for users managing changelog updates. (commit 49efe6f)
+- Added functions for file change detection and fallback release note classification, enhancing the tool's ability to handle changes more effectively. (commit b678843)
+- Introduced `hasMeaningfulReleaseInput` function with corresponding tests to improve the accuracy of release note generation. (commit 321a414)
+
 ## [v1.1.1] - 2026-08-01
 
 ### Added

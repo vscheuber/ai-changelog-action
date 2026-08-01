@@ -1,6 +1,6 @@
 {
   "name": "ai-changelog-action",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Reusable GitHub Action that updates CHANGELOG.md Unreleased section using an LLM",
   "main": "scripts/generate.js",
   "private": true,
