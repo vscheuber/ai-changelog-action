@@ -5,6 +5,12 @@ on:
     inputs:
       release-type:
         description: 'Release kind: prerelease | patch | minor | major'
+        type: choice
+        options:
+          - prerelease
+          - patch
+          - minor
+          - major
         default: 'prerelease'
         required: true
 
