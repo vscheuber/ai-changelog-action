@@ -386,6 +386,7 @@ function buildPrompt({
   userFocus,
   targetUserType,
   existingUnreleased,
+  previousReleaseBody,
   commits,
   diffStat,
   prs,
@@ -416,6 +417,10 @@ function buildPrompt({
       .map((n) => `### ${n.tag}\n${n.body}`)
       .join('\n\n');
   }
+
+  const previousReleaseBlock = previousReleaseBody
+    ? `PREVIOUS RELEASE NOTES (do not restate these items unless the current changes materially extend or change them):\n${previousReleaseBody}\n`
+    : '';
 
   const fullReleaseInstructions = isFullRelease
     ? `
@@ -452,10 +457,13 @@ RULES:
 3. Group changes under clear headings when appropriate (### Added, ### Changed, ### Fixed, ### Removed, etc.).
 4. Reference PR numbers when useful (e.g. (#123)).
 5. If a related library has changes that affect users of this project, mention them.
+6. Do NOT restate capabilities that were already described in the most recent release unless the current commit range materially changes or extends them.
 6. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
 
 EXISTING UNRELEASED CONTENT (preserve / merge):
 ${existingUnreleased || '(empty)'}
+
+${previousReleaseBlock}
 
 ${preReleaseNotes.length ? `CHANGELOG ENTRIES FROM PRE-RELEASES SINCE LAST FULL RELEASE:\n${preReleaseBlock}\n` : ''}
 
@@ -636,6 +644,9 @@ async function main() {
 
   const unreleased = extractUnreleased(changelogContent);
   const existingBody = unreleased ? unreleased.body : '';
+  const previousReleaseNotes = sinceRef
+    ? extractChangelogSections(changelogContent, [sinceRef])[0]?.body || ''
+    : '';
 
   // ------------------------------------------------------------------
   // 4. When this is a full release, gather pre-release changelog notes
@@ -697,6 +708,7 @@ async function main() {
       userFocus,
       targetUserType,
       existingUnreleased: existingBody,
+      previousReleaseBody: previousReleaseNotes,
       commits,
       diffStat,
       prs,

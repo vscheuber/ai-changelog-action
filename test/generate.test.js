@@ -170,6 +170,7 @@ test('buildPrompt includes audience-specific guidance', () => {
     repo: 'vscheuber/ai-changelog-action',
     userFocus: 'library consumers',
     existingUnreleased: '',
+    previousReleaseBody: '### Added\n- Existing capability',
     commits: '',
     diffStat: '',
     prs: [],
@@ -192,6 +193,8 @@ test('buildPrompt includes audience-specific guidance', () => {
 
   assert.match(developerPrompt, /Prioritize API changes, integration behavior/);
   assert.match(userPrompt, /Prioritize behavior, workflows, commands, flags/);
+  assert.match(userPrompt, /PREVIOUS RELEASE NOTES/);
+  assert.match(userPrompt, /Do NOT restate capabilities that were already described/);
 });
 
 test('upsertUnreleased updates existing Unreleased section', () => {
