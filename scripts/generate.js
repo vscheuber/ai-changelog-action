@@ -264,14 +264,20 @@ function getLastFullReleaseTag() {
  * All pre-release tags that appeared after the previous full release
  * (i.e. the ones that belong to the current release train).
  */
-function getPreReleaseTagsSinceLastFull() {
-  const tags = getAllTags();
+function getPreReleaseTagsSinceLastFullFromTags(tags) {
   const result = [];
   for (const tag of tags) {
+    if (!isStableSemverTag(tag) && !isPreRelease(tag)) {
+      continue; // ignore moving major/minor aliases like v1, v1.0
+    }
     if (isStableSemverTag(tag) && !isPreRelease(tag)) break; // we hit the previous stable full release
     result.push(tag);
   }
   return result.reverse(); // chronological order
+}
+
+function getPreReleaseTagsSinceLastFull() {
+  return getPreReleaseTagsSinceLastFullFromTags(getAllTags());
 }
 
 function getCommitsSince(ref) {
@@ -1030,6 +1036,7 @@ module.exports = {
   buildDeterministicCommitNotes,
   isFunctionalActionPath,
   filterGroundedReleaseNotes,
+  getPreReleaseTagsSinceLastFullFromTags,
   classifyReleaseFallback,
   buildFallbackReleaseNotes,
   extractUnreleased,

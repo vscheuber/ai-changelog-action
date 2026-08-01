@@ -14,6 +14,7 @@ const {
   buildFallbackReleaseNotes,
   extractUnreleased,
   extractChangelogSections,
+  getPreReleaseTagsSinceLastFullFromTags,
   formatReleaseHeading,
   upsertUnreleased,
   promoteUnreleased,
@@ -231,6 +232,11 @@ test('extractChangelogSections finds matching tagged sections', () => {
   assert.match(sections[0].body, /Beta change/);
   assert.equal(sections[1].tag, '1.1.0-beta.2');
   assert.match(sections[1].body, /More beta changes/);
+});
+
+test('getPreReleaseTagsSinceLastFull ignores major/minor alias tags', () => {
+  const tags = getPreReleaseTagsSinceLastFullFromTags(['v1', 'v1.0', 'v1.0.6-1', 'v1.0.6']);
+  assert.deepEqual(tags, ['v1.0.6-1']);
 });
 
 test('buildPrompt includes audience-specific guidance', () => {
