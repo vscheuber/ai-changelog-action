@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+### Changed
+- Simplified the release workflow by removing unused inputs and integrating `version-bump-action` for version computation, streamlining the process for users (#95d160d, #ef54872).
+
 ## [v1.0.5] - 2026-07-28
 
 ### Added
