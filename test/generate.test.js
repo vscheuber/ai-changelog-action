@@ -7,7 +7,9 @@ const {
   normalizeGeneratedBody,
   removeDuplicateReleaseLines,
   hasMeaningfulReleaseInput,
+  buildDeterministicCommitNotes,
   isFunctionalActionPath,
+  filterGroundedReleaseNotes,
   classifyReleaseFallback,
   buildFallbackReleaseNotes,
   extractUnreleased,
@@ -157,6 +159,35 @@ test('removeDuplicateReleaseLines strips empty from pre-releases headings when n
   const deduped = removeDuplicateReleaseLines(current, previous);
   assert.doesNotMatch(deduped, /from pre-releases/);
   assert.match(deduped, /Truly new capability/);
+});
+
+test('filterGroundedReleaseNotes keeps only bullets tied to current commit or PR evidence', () => {
+  const body = [
+    '### Added',
+    '- Old repeated capability. (commit 49efe6f)',
+    '- New grounded capability. (commit e7ec998)',
+    '- Also grounded by PR. (#42)',
+  ].join('\n');
+
+  const filtered = filterGroundedReleaseNotes(body, {
+    commitEntries: [{ sha: 'e7ec998', subject: 'feat: grounded change', author: 'test' }],
+    prs: [{ number: 42 }],
+  });
+
+  assert.doesNotMatch(filtered, /49efe6f/);
+  assert.match(filtered, /e7ec998/);
+  assert.match(filtered, /#42/);
+});
+
+test('buildDeterministicCommitNotes creates commit-grounded fallback notes', () => {
+  const notes = buildDeterministicCommitNotes([
+    { sha: 'abc1234', subject: 'feat: add grounded fallback', author: 'test' },
+    { sha: 'def5678', subject: 'fix: improve release filtering', author: 'test' },
+  ]);
+
+  assert.match(notes, /^### Changed/m);
+  assert.match(notes, /Add grounded fallback\. \(commit abc1234\)/);
+  assert.match(notes, /Improve release filtering\. \(commit def5678\)/);
 });
 
 test('extractUnreleased returns section boundaries and body', () => {

@@ -281,6 +281,115 @@ function getCommitsSince(ref) {
   return run(`git log ${ref}..HEAD --pretty=format:"%h %s (%an)"`);
 }
 
+function getCommitEntriesSince(ref) {
+  const raw = ref
+    ? run(`git log ${ref}..HEAD --pretty=format:"%h%x09%s%x09%an"`)
+    : run('git log --pretty=format:"%h%x09%s%x09%an" -n 150');
+  if (!raw) return [];
+
+  return raw
+    .split('\n')
+    .map((line) => line.split('\t'))
+    .filter((parts) => parts.length >= 2)
+    .map(([sha, subject, author]) => ({
+      sha: sha.trim(),
+      subject: (subject || '').trim(),
+      author: (author || '').trim(),
+    }))
+    .filter((entry) => entry.sha && entry.subject);
+}
+
+function toSentence(text) {
+  if (!text) return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function normalizeCommitSubject(subject) {
+  const cleaned = subject.replace(/^[a-z]+(\([^)]+\))?!?:\s*/i, '').trim();
+  return toSentence(cleaned || subject);
+}
+
+function buildDeterministicCommitNotes(commitEntries) {
+  const bullets = commitEntries.map((entry) => `- ${normalizeCommitSubject(entry.subject)} (commit ${entry.sha})`);
+  if (!bullets.length) return '';
+  return ['### Changed', ...bullets].join('\n');
+}
+
+function isBulletGrounded(line, { allowedCommits, allowedPRs }) {
+  const commitMatches = line.match(/\b[0-9a-f]{7,40}\b/ig) || [];
+  if (commitMatches.some((value) => allowedCommits.has(value.toLowerCase()))) {
+    return true;
+  }
+
+  const prMatches = [...line.matchAll(/#(\d+)/g)].map((match) => match[1]);
+  if (prMatches.some((value) => allowedPRs.has(value))) {
+    return true;
+  }
+
+  return false;
+}
+
+function filterGroundedReleaseNotes(body, { commitEntries, prs }) {
+  if (!body) return '';
+
+  const allowedCommits = new Set(
+    (commitEntries || []).flatMap((entry) => {
+      const values = [entry.sha.toLowerCase()];
+      if (entry.sha.length > 7) {
+        values.push(entry.sha.slice(0, 7).toLowerCase());
+      }
+      return values;
+    })
+  );
+  const allowedPRs = new Set((prs || []).map((pr) => String(pr.number)));
+
+  const lines = body.split('\n');
+  const filtered = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^###\s+/.test(trimmed) || trimmed === '') {
+      filtered.push(line);
+      continue;
+    }
+
+    if (/^-\s+/.test(trimmed) && isBulletGrounded(trimmed, { allowedCommits, allowedPRs })) {
+      filtered.push(line);
+    }
+  }
+
+  const compacted = [];
+  for (let index = 0; index < filtered.length; index += 1) {
+    const line = filtered[index];
+    const trimmed = line.trim();
+
+    if (/^###\s+/.test(trimmed)) {
+      let hasBullet = false;
+      for (let lookahead = index + 1; lookahead < filtered.length; lookahead += 1) {
+        const nextTrimmed = filtered[lookahead].trim();
+        if (/^###\s+/.test(nextTrimmed)) break;
+        if (/^-\s+/.test(nextTrimmed)) {
+          hasBullet = true;
+          break;
+        }
+      }
+      if (!hasBullet) {
+        continue;
+      }
+    }
+
+    if (trimmed === '' && compacted[compacted.length - 1] === '') {
+      continue;
+    }
+
+    compacted.push(line);
+  }
+
+  return compacted.join('\n').trim();
+}
+
 function getDiffStat(ref) {
   if (!ref) return '';
   return run(`git diff --stat ${ref}..HEAD`);
@@ -538,7 +647,8 @@ RULES:
 4. Reference PR numbers when useful (e.g. (#123)).
 5. If a related library has changes that affect users of this project, mention them.
 6. Do NOT restate capabilities that were already described in the most recent release unless the current commit range materially changes or extends them.
-6. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
+7. Every bullet MUST end with evidence from the current release range, using either \`(#123)\` for a current PR or \`(commit abc1234)\` for a current commit.
+8. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
 
 EXISTING UNRELEASED CONTENT (preserve / merge):
 ${existingUnreleased || '(empty)'}
@@ -698,6 +808,7 @@ async function main() {
   // 2. Collect data
   // ------------------------------------------------------------------
   core.info('Collecting commits and diff…');
+  const commitEntries = getCommitEntriesSince(sinceRef);
   const commits = getCommitsSince(sinceRef);
   const diffStat = getDiffStat(sinceRef);
   const changedFiles = getChangedFilesSince(sinceRef);
@@ -816,6 +927,15 @@ async function main() {
   if (!preReleaseNotes.length) {
     newBody = removeDuplicateReleaseLines(newBody, previousReleaseNotes);
   }
+  if (!fallbackKind) {
+    newBody = filterGroundedReleaseNotes(newBody, {
+      commitEntries,
+      prs,
+    });
+    if (!newBody) {
+      newBody = buildDeterministicCommitNotes(commitEntries);
+    }
+  }
 
   core.info('--- Generated Unreleased content ---');
   core.info(newBody);
@@ -906,7 +1026,10 @@ module.exports = {
   removeDuplicateReleaseLines,
   hasMeaningfulReleaseInput,
   getChangedFilesSince,
+  getCommitEntriesSince,
+  buildDeterministicCommitNotes,
   isFunctionalActionPath,
+  filterGroundedReleaseNotes,
   classifyReleaseFallback,
   buildFallbackReleaseNotes,
   extractUnreleased,
