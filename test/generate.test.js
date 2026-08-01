@@ -5,6 +5,9 @@ const {
   isPreRelease,
   extractUnreleased,
   extractChangelogSections,
+  formatReleaseHeading,
+  upsertUnreleased,
+  promoteUnreleased,
   buildPrompt,
 } = require('../scripts/generate');
 
@@ -85,4 +88,74 @@ test('buildPrompt includes audience-specific guidance', () => {
 
   assert.match(developerPrompt, /Prioritize API changes, integration behavior/);
   assert.match(userPrompt, /Prioritize behavior, workflows, commands, flags/);
+});
+
+test('upsertUnreleased updates existing Unreleased section', () => {
+  const changelog = [
+    '# Changelog',
+    '',
+    '## Unreleased',
+    '',
+    '- Old content',
+    '',
+    '## [v1.0.0] - 2026-01-01',
+    '',
+    '- Initial',
+    '',
+  ].join('\n');
+
+  const updated = upsertUnreleased(changelog, '### Added\n- New content');
+  assert.match(updated, /## Unreleased\n\n### Added\n- New content/);
+  assert.doesNotMatch(updated, /Old content/);
+});
+
+test('promoteUnreleased inserts versioned heading and resets Unreleased', () => {
+  const changelog = [
+    '# Changelog',
+    '',
+    '## Unreleased',
+    '',
+    '### Added',
+    '- New command',
+    '',
+    '## [v1.0.0] - 2026-01-01',
+    '',
+    '- Initial release',
+    '',
+  ].join('\n');
+
+  const promoted = promoteUnreleased(changelog, {
+    tag: 'v1.0.1',
+    date: '2026-08-01',
+    failIfEmpty: true,
+  });
+
+  assert.equal(promoted.promoted, true);
+  assert.equal(promoted.heading, formatReleaseHeading('v1.0.1', '2026-08-01'));
+  assert.equal(promoted.notes, '### Added\n- New command');
+  assert.match(promoted.updatedContent, /## Unreleased\n\n## \[v1.0.1\] - 2026-08-01\n\n### Added\n- New command/);
+});
+
+test('promoteUnreleased is rerun-safe when heading already exists', () => {
+  const changelog = [
+    '# Changelog',
+    '',
+    '## Unreleased',
+    '',
+    '## [v1.0.1] - 2026-08-01',
+    '',
+    '### Added',
+    '- New command',
+    '',
+  ].join('\n');
+
+  const promoted = promoteUnreleased(changelog, {
+    tag: 'v1.0.1',
+    date: '2026-08-01',
+    failIfEmpty: false,
+  });
+
+  assert.equal(promoted.promoted, false);
+  assert.equal(promoted.headingExists, true);
+  assert.equal(promoted.updatedContent, changelog);
 });

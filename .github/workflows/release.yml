@@ -64,57 +64,10 @@ jobs:
           target-user-type: user
           release-type: ${{ steps.version.outputs.action_release_type }}
           version: ${{ steps.version.outputs.normalized }}
+          promote-release: true
+          release-tag: ${{ steps.version.outputs.tag }}
+          release-notes-path: RELEASE_NOTES.md
           commit: false
-
-      - name: Write release notes from AI action output
-        env:
-          RELEASE_NOTES: ${{ steps.changelog.outputs.unreleased-content }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$RELEASE_NOTES" > RELEASE_NOTES.md
-
-      - name: Promote release notes into versioned changelog section
-        env:
-          CHANGELOG_PATH: CHANGELOG.md
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          node - <<'NODE'
-          const fs = require('fs');
-
-          const changelogPath = process.env.CHANGELOG_PATH || 'CHANGELOG.md';
-          const releaseTag = process.env.RELEASE_TAG;
-          const date = new Date().toISOString().slice(0, 10);
-          const releaseHeading = `## [${releaseTag}] - ${date}`;
-
-          if (!fs.existsSync(changelogPath)) {
-            throw new Error(`${changelogPath} does not exist`);
-          }
-          if (!fs.existsSync('RELEASE_NOTES.md')) {
-            throw new Error('RELEASE_NOTES.md does not exist');
-          }
-
-          const notes = fs.readFileSync('RELEASE_NOTES.md', 'utf8').trim();
-          if (!notes) {
-            throw new Error('RELEASE_NOTES.md is empty');
-          }
-
-          const content = fs.readFileSync(changelogPath, 'utf8');
-          const unreleased = content.match(/^##?\s+Unreleased\s*\n([\s\S]*?)(?=^##?\s+|(?![\s\S]))/im);
-
-          if (!unreleased) {
-            throw new Error('Could not find an Unreleased section in CHANGELOG.md');
-          }
-
-          if (content.includes(releaseHeading)) {
-            // Rerun-safe: heading already exists, do not duplicate sections.
-            process.exit(0);
-          }
-
-          const replacement = `## Unreleased\n\n${releaseHeading}\n\n${notes}\n\n`;
-          const updated = content.replace(unreleased[0], replacement).replace(/\n{3,}/g, '\n\n');
-
-          fs.writeFileSync(changelogPath, updated, 'utf8');
-          NODE
 
       - name: Commit changelog and version changes
         run: |

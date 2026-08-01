@@ -65,6 +65,26 @@ inputs:
     description: 'Commit message used when commit=true'
     required: false
     default: 'docs: update CHANGELOG.md (Unreleased)'
+  promote-release:
+    description: 'If true, promote Unreleased content into a versioned release section and reset Unreleased'
+    required: false
+    default: 'false'
+  release-tag:
+    description: 'Release tag used for the promoted changelog heading (for example v1.2.3). Required when promote-release=true'
+    required: false
+    default: ''
+  release-date:
+    description: 'Release date used in the promoted changelog heading (YYYY-MM-DD). Defaults to current UTC date'
+    required: false
+    default: ''
+  release-notes-path:
+    description: 'Path to write release notes content extracted from promoted changelog content'
+    required: false
+    default: 'RELEASE_NOTES.md'
+  fail-if-empty-release-notes:
+    description: 'If true, fail when release notes are empty during promotion'
+    required: false
+    default: 'true'
 
 outputs:
   changelog-updated:
@@ -79,6 +99,15 @@ outputs:
   pre-release-tags:
     description: 'Comma-separated list of pre-release tags that were consolidated (only set on full releases)'
     value: ${{ steps.generate.outputs.pre-release-tags }}
+  release-heading:
+    description: 'Versioned release heading written during promotion (for example ## [v1.2.3] - 2026-08-01)'
+    value: ${{ steps.generate.outputs.release-heading }}
+  release-notes:
+    description: 'Release notes body used for promoted release section and written to release-notes-path'
+    value: ${{ steps.generate.outputs.release-notes }}
+  promoted:
+    description: 'Whether Unreleased content was promoted into a versioned release section during this run'
+    value: ${{ steps.generate.outputs.promoted }}
 
 runs:
   using: 'composite'
@@ -113,6 +142,11 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
         COMMIT: ${{ inputs.commit }}
         COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        PROMOTE_RELEASE: ${{ inputs.promote-release }}
+        RELEASE_TAG: ${{ inputs.release-tag }}
+        RELEASE_DATE: ${{ inputs.release-date }}
+        RELEASE_NOTES_PATH: ${{ inputs.release-notes-path }}
+        FAIL_IF_EMPTY_RELEASE_NOTES: ${{ inputs.fail-if-empty-release-notes }}
         GITHUB_REPOSITORY: ${{ github.repository }}
         GITHUB_WORKSPACE: ${{ github.workspace }}
       run: node ${{ github.action_path }}/scripts/generate.js

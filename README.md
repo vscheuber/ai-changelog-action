@@ -50,8 +50,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Update Unreleased section
-        uses: your-username/ai-changelog-action@v1
+      - name: Update and promote changelog
+        uses: your-username/ai-changelog-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           llm-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -63,6 +63,8 @@ jobs:
           # For a full release you can be explicit:
           # release-type: full
           # version: 2.1.0
+          # promote-release: true
+          # release-tag: v2.1.0
           prompt-extra: |
             Focus on changes that affect people who run the CLI.
             Mention frodo-lib changes only when they are visible to CLI users.
@@ -90,6 +92,11 @@ jobs:
 | `dry-run` | | `false` | Only print the generated text, do not write the file |
 | `commit` | | `false` | Commit & push the updated CHANGELOG.md |
 | `commit-message` | | `docs: update CHANGELOG.md (Unreleased)` | Commit message |
+| `promote-release` | | `false` | Promote Unreleased content into a versioned release section and reset Unreleased |
+| `release-tag` | | `''` | Release tag for promoted heading (required when `promote-release=true`) |
+| `release-date` | | `''` | Optional release date (`YYYY-MM-DD`); defaults to current UTC date |
+| `release-notes-path` | | `RELEASE_NOTES.md` | File path to write promoted release notes body |
+| `fail-if-empty-release-notes` | | `true` | Fail promotion when Unreleased notes are empty |
 
 ## Outputs
 
@@ -99,6 +106,9 @@ jobs:
 | `unreleased-content` | The final body written under `## Unreleased` |
 | `is-full-release` | `"true"` when the action treated the run as a full/stable release |
 | `pre-release-tags` | Comma-separated list of pre-release tags that were consolidated |
+| `release-heading` | Versioned heading written during promotion (for example `## [v1.2.3] - 2026-08-01`) |
+| `release-notes` | Release notes body used during promotion |
+| `promoted` | `"true"` when promotion happened during this run |
 
 ---
 
@@ -177,7 +187,7 @@ npm test
 This repository now includes two workflows:
 
 - `.github/workflows/ci.yml`: runs unit tests on every push to `main` and every pull request.
-- `.github/workflows/release.yml`: manual release pipeline that uses this action itself to update changelog content, promotes `Unreleased` into a versioned section, computes the next semver version from release type and current/latest version, tags it, and publishes a GitHub Release from that release section.
+- `.github/workflows/release.yml`: manual release pipeline that uses this action itself to update and promote changelog content, computes the next semver version from release type and current/latest version, tags it, and publishes a GitHub Release from the generated release notes.
 
 ### Required secrets for release workflow
 
@@ -191,12 +201,12 @@ This repository now includes two workflows:
   - `patch`: creates a full patch release.
   - `minor`: creates a full minor release.
   - `major`: creates a full major release.
-3. Optional: set `force-release=true` to allow releasing when there are no new commits since the last comparable release tag.
-4. Optional: set `current-version` to override auto-detected latest tag.
-5. Optional: set `prerelease-identifier` (default empty for numeric prereleases like `-1`, `-2`; can be `rc`, `beta`, `alpha`, etc.).
-6. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
-7. The workflow will test, compute next version, verify there are new commits since the last comparable release tag (unless forced), update changelog content, move `Unreleased` into `## [v<version>] - <date>`, create the corresponding `v<version>` tag, and publish the release using that section as the release body.
-8. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
+5. Optional: set `force-release=true` to allow releasing when there are no new commits since the last comparable release tag.
+6. Optional: set `current-version` to override auto-detected latest tag.
+7. Optional: set `prerelease-identifier` (default empty for numeric prereleases like `-1`, `-2`; can be `rc`, `beta`, `alpha`, etc.).
+8. Optionally adjust `llm-provider`, `model`, `target-user-type`, and `user-focus`.
+9. The workflow will test, compute next version, verify there are new commits since the last comparable release tag (unless forced), update and promote changelog content via this action, create the corresponding `v<version>` tag, and publish the release using the generated release notes.
+10. On non-prerelease releases, it also moves `v<major>` and `v<major>.<minor>` tags forward to the new release commit.
 
 ### Versioning behavior in release workflow
 

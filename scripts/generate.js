@@ -216,6 +216,62 @@ function extractUnreleased(content) {
   return null;
 }
 
+function formatReleaseHeading(tag, date) {
+  return `## [${tag}] - ${date}`;
+}
+
+function toUtcDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function upsertUnreleased(content, body) {
+  const unreleased = extractUnreleased(content);
+  if (unreleased) {
+    const before = content.slice(0, unreleased.start);
+    const after = content.slice(unreleased.end);
+    return `${before}## Unreleased\n\n${body}\n\n${after}`.replace(/\n{3,}/g, '\n\n');
+  }
+
+  const lines = content.split('\n');
+  const insertAt = lines.findIndex((l) => l.startsWith('# ')) + 1 || 0;
+  lines.splice(insertAt, 0, '', '## Unreleased', '', body, '');
+  return lines.join('\n');
+}
+
+function promoteUnreleased(content, { tag, date, failIfEmpty }) {
+  const unreleased = extractUnreleased(content);
+  if (!unreleased) {
+    throw new Error('Could not find Unreleased section for promotion');
+  }
+
+  const notes = unreleased.body.trim();
+  if (!notes && failIfEmpty) {
+    throw new Error('No changelog content under Unreleased');
+  }
+
+  const heading = formatReleaseHeading(tag, date);
+  if (content.includes(heading)) {
+    return {
+      updatedContent: content,
+      notes,
+      heading,
+      promoted: false,
+      headingExists: true,
+    };
+  }
+
+  const replacement = `## Unreleased\n\n${heading}\n\n${notes}\n\n`;
+  const updatedContent = content.replace(unreleased.fullMatch, replacement).replace(/\n{3,}/g, '\n\n');
+
+  return {
+    updatedContent,
+    notes,
+    heading,
+    promoted: true,
+    headingExists: false,
+  };
+}
+
 function buildPrompt({
   repo,
   userFocus,
@@ -367,6 +423,11 @@ async function main() {
   const commitMessage = process.env.COMMIT_MESSAGE || 'docs: update CHANGELOG.md (Unreleased)';
   const releaseTypeInput = (process.env.RELEASE_TYPE || 'auto').toLowerCase();
   const version = process.env.VERSION || '';
+  const promoteRelease = (process.env.PROMOTE_RELEASE || 'false').toLowerCase() === 'true';
+  const releaseTag = process.env.RELEASE_TAG || '';
+  const releaseDate = process.env.RELEASE_DATE || '';
+  const releaseNotesPath = process.env.RELEASE_NOTES_PATH || 'RELEASE_NOTES.md';
+  const failIfEmptyReleaseNotes = (process.env.FAIL_IF_EMPTY_RELEASE_NOTES || 'true').toLowerCase() === 'true';
 
   if (!['user', 'developer'].includes(targetUserType)) {
     core.setFailed('target-user-type must be one of: user, developer');
@@ -375,6 +436,11 @@ async function main() {
 
   if (!['auto', 'full', 'prerelease'].includes(releaseTypeInput)) {
     core.setFailed('release-type must be one of: auto, full, prerelease');
+    return;
+  }
+
+  if (promoteRelease && !releaseTag) {
+    core.setFailed('release-tag is required when promote-release=true');
     return;
   }
 
@@ -526,6 +592,9 @@ async function main() {
   core.setOutput('unreleased-content', newBody);
   core.setOutput('is-full-release', String(isFullRelease));
   core.setOutput('pre-release-tags', preReleaseTags.join(','));
+  core.setOutput('release-notes', newBody);
+  core.setOutput('release-heading', '');
+  core.setOutput('promoted', 'false');
 
   if (dryRun) {
     core.info('dry-run=true → not writing file');
@@ -536,16 +605,29 @@ async function main() {
   // ------------------------------------------------------------------
   // 6. Write updated CHANGELOG
   // ------------------------------------------------------------------
-  let updated;
-  if (unreleased) {
-    const before = changelogContent.slice(0, unreleased.start);
-    const after = changelogContent.slice(unreleased.end);
-    updated = `${before}## Unreleased\n\n${newBody}\n\n${after}`.replace(/\n{3,}/g, '\n\n');
-  } else {
-    const lines = changelogContent.split('\n');
-    const insertAt = lines.findIndex((l) => l.startsWith('# ')) + 1 || 0;
-    lines.splice(insertAt, 0, '', '## Unreleased', '', newBody, '');
-    updated = lines.join('\n');
+  const unreleasedUpdated = upsertUnreleased(changelogContent, newBody);
+  let updated = unreleasedUpdated;
+
+  if (promoteRelease) {
+    const date = releaseDate || toUtcDateString();
+    const promotion = promoteUnreleased(unreleasedUpdated, {
+      tag: releaseTag,
+      date,
+      failIfEmpty: failIfEmptyReleaseNotes,
+    });
+
+    updated = promotion.updatedContent;
+    core.setOutput('release-notes', promotion.notes);
+    core.setOutput('release-heading', promotion.heading);
+    core.setOutput('promoted', String(promotion.promoted));
+
+    const releaseNotesAbsolute = path.join(workspace, releaseNotesPath);
+    fs.writeFileSync(releaseNotesAbsolute, `${promotion.notes}\n`, 'utf8');
+    core.info(`Wrote release notes to ${releaseNotesPath}`);
+
+    if (promotion.headingExists) {
+      core.info(`Release heading already present (${promotion.heading}); skipping duplicate promotion`);
+    }
   }
 
   if (updated === changelogContent) {
@@ -564,6 +646,9 @@ async function main() {
     runStrict('git config user.name "github-actions[bot]"');
     runStrict('git config user.email "github-actions[bot]@users.noreply.github.com"');
     runStrict(`git add "${changelogPath}"`);
+    if (promoteRelease) {
+      runStrict(`git add "${releaseNotesPath}"`);
+    }
     const status = run('git status --porcelain');
     if (status) {
       runStrict(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
@@ -586,5 +671,8 @@ module.exports = {
   isPreRelease,
   extractUnreleased,
   extractChangelogSections,
+  formatReleaseHeading,
+  upsertUnreleased,
+  promoteUnreleased,
   buildPrompt,
 };
