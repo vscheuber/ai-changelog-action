@@ -93,6 +93,73 @@ function hasMeaningfulReleaseInput({ commits, diffStat, prs, related, preRelease
   );
 }
 
+function getChangedFilesSince(ref) {
+  const raw = ref
+    ? run(`git diff --name-only ${ref}..HEAD`)
+    : run('git show --pretty="" --name-only HEAD');
+  if (!raw) return [];
+  return raw.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function isFunctionalActionPath(filePath) {
+  return filePath === 'action.yml'
+    || filePath === 'package.json'
+    || filePath.startsWith('scripts/')
+    || filePath.startsWith('src/')
+    || filePath.startsWith('dist/')
+    || filePath.startsWith('lib/')
+    || filePath === 'index.js'
+    || filePath === 'index.mjs'
+    || filePath === 'main.js'
+    || filePath === 'main.mjs';
+}
+
+function classifyReleaseFallback({ changedFiles, existingBody, preReleaseNotes }) {
+  if (existingBody && existingBody.trim()) {
+    return null;
+  }
+
+  if (preReleaseNotes && preReleaseNotes.length) {
+    return null;
+  }
+
+  if (!changedFiles.length) {
+    return 'cosmetic-release';
+  }
+
+  if (changedFiles.every((filePath) => filePath.startsWith('.github/'))) {
+    return 'pipeline-only';
+  }
+
+  if (!changedFiles.some((filePath) => isFunctionalActionPath(filePath))) {
+    return 'internal-only';
+  }
+
+  return null;
+}
+
+function buildFallbackReleaseNotes(kind) {
+  switch (kind) {
+    case 'pipeline-only':
+      return [
+        '### Changed',
+        '- Internal pipeline update release. This release updates CI/CD or release automation under `.github/` without changing the action\'s functional behavior.',
+      ].join('\n');
+    case 'internal-only':
+      return [
+        '### Changed',
+        '- Internal changes only. This release does not introduce functional changes to the action behavior.',
+      ].join('\n');
+    case 'cosmetic-release':
+      return [
+        '### Changed',
+        '- Cosmetic version update release. This release records a version or release-state change without additional functional code changes.',
+      ].join('\n');
+    default:
+      return '';
+  }
+}
+
 function getAllTags() {
   // Newest first
   const raw = run('git tag --sort=-creatordate');
@@ -545,6 +612,7 @@ async function main() {
   core.info('Collecting commits and diff…');
   const commits = getCommitsSince(sinceRef);
   const diffStat = getDiffStat(sinceRef);
+  const changedFiles = getChangedFilesSince(sinceRef);
 
   core.info('Fetching merged pull requests…');
   const prs = await getMergedPRs(octokit, owner, repo, sinceDate);
@@ -597,7 +665,17 @@ async function main() {
   // ------------------------------------------------------------------
   // 5. Build prompt & call LLM
   // ------------------------------------------------------------------
-  if (promoteRelease && !hasMeaningfulReleaseInput({
+  const fallbackKind = classifyReleaseFallback({
+    changedFiles,
+    existingBody,
+    preReleaseNotes,
+  });
+
+  if (fallbackKind) {
+    core.info(`Using deterministic fallback release notes (${fallbackKind})`);
+  }
+
+  if (promoteRelease && !fallbackKind && !hasMeaningfulReleaseInput({
     commits,
     diffStat,
     prs,
@@ -609,28 +687,32 @@ async function main() {
     return;
   }
 
-  core.info(`Calling ${provider} (${model})…`);
-  const prompt = buildPrompt({
-    repo: process.env.GITHUB_REPOSITORY,
-    userFocus,
-    targetUserType,
-    existingUnreleased: existingBody,
-    commits,
-    diffStat,
-    prs,
-    related,
-    preReleaseNotes,
-    isFullRelease,
-    version,
-    promptExtra,
-  });
-
   let newBody;
-  try {
-    newBody = await callLLM({ provider, apiKey: llmApiKey, model, prompt });
-  } catch (err) {
-    core.setFailed(`LLM call failed: ${err.message}`);
-    return;
+  if (fallbackKind) {
+    newBody = buildFallbackReleaseNotes(fallbackKind);
+  } else {
+    core.info(`Calling ${provider} (${model})…`);
+    const prompt = buildPrompt({
+      repo: process.env.GITHUB_REPOSITORY,
+      userFocus,
+      targetUserType,
+      existingUnreleased: existingBody,
+      commits,
+      diffStat,
+      prs,
+      related,
+      preReleaseNotes,
+      isFullRelease,
+      version,
+      promptExtra,
+    });
+
+    try {
+      newBody = await callLLM({ provider, apiKey: llmApiKey, model, prompt });
+    } catch (err) {
+      core.setFailed(`LLM call failed: ${err.message}`);
+      return;
+    }
   }
 
   // Clean possible accidental fences
@@ -727,6 +809,10 @@ module.exports = {
   isStableSemverTag,
   normalizeGeneratedBody,
   hasMeaningfulReleaseInput,
+  getChangedFilesSince,
+  isFunctionalActionPath,
+  classifyReleaseFallback,
+  buildFallbackReleaseNotes,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,

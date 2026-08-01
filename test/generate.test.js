@@ -6,6 +6,9 @@ const {
   isStableSemverTag,
   normalizeGeneratedBody,
   hasMeaningfulReleaseInput,
+  isFunctionalActionPath,
+  classifyReleaseFallback,
+  buildFallbackReleaseNotes,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,
@@ -66,6 +69,57 @@ test('hasMeaningfulReleaseInput is false when there are no changes to release', 
     }),
     true
   );
+});
+
+test('isFunctionalActionPath distinguishes functional code from pipeline-only files', () => {
+  assert.equal(isFunctionalActionPath('.github/workflows/release.yml'), false);
+  assert.equal(isFunctionalActionPath('scripts/generate.js'), true);
+  assert.equal(isFunctionalActionPath('action.yml'), true);
+  assert.equal(isFunctionalActionPath('README.md'), false);
+});
+
+test('classifyReleaseFallback detects cosmetic, pipeline-only, and internal-only releases', () => {
+  assert.equal(
+    classifyReleaseFallback({
+      changedFiles: [],
+      existingBody: '',
+      preReleaseNotes: [],
+    }),
+    'cosmetic-release'
+  );
+
+  assert.equal(
+    classifyReleaseFallback({
+      changedFiles: ['.github/workflows/release.yml', '.github/workflows/ci.yml'],
+      existingBody: '',
+      preReleaseNotes: [],
+    }),
+    'pipeline-only'
+  );
+
+  assert.equal(
+    classifyReleaseFallback({
+      changedFiles: ['README.md', 'docs/notes.md'],
+      existingBody: '',
+      preReleaseNotes: [],
+    }),
+    'internal-only'
+  );
+
+  assert.equal(
+    classifyReleaseFallback({
+      changedFiles: ['scripts/generate.js'],
+      existingBody: '',
+      preReleaseNotes: [],
+    }),
+    null
+  );
+});
+
+test('buildFallbackReleaseNotes returns deterministic internal release notes', () => {
+  assert.match(buildFallbackReleaseNotes('pipeline-only'), /pipeline update release|Internal pipeline update release/i);
+  assert.match(buildFallbackReleaseNotes('internal-only'), /Internal changes only/);
+  assert.match(buildFallbackReleaseNotes('cosmetic-release'), /Cosmetic version update release/);
 });
 
 test('extractUnreleased returns section boundaries and body', () => {
