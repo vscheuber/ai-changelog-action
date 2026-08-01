@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   isPreRelease,
+  isStableSemverTag,
+  normalizeGeneratedBody,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,
@@ -16,6 +18,27 @@ test('isPreRelease detects stable and pre-release versions', () => {
   assert.equal(isPreRelease('1.2.3-beta.1'), true);
   assert.equal(isPreRelease('v2.0.0-rc1'), true);
   assert.equal(isPreRelease('4.1.2-1'), true);
+});
+
+test('isStableSemverTag detects full stable semver tags only', () => {
+  assert.equal(isStableSemverTag('v2'), false);
+  assert.equal(isStableSemverTag('v2.0'), false);
+  assert.equal(isStableSemverTag('v2.0.0'), true);
+  assert.equal(isStableSemverTag('2.1.3'), true);
+  assert.equal(isStableSemverTag('v1.0.8-1'), false);
+});
+
+test('normalizeGeneratedBody strips accidental heading from LLM output', () => {
+  const raw = [
+    '## 2.0.0',
+    '',
+    '### Added',
+    '- Important change',
+    '',
+  ].join('\n');
+
+  const normalized = normalizeGeneratedBody(raw);
+  assert.equal(normalized, '### Added\n- Important change');
 });
 
 test('extractUnreleased returns section boundaries and body', () => {

@@ -53,6 +53,31 @@ function isPreRelease(tag) {
     || /\d+\.\d+\.\d+-.+/.test(tag); // any -suffix after the patch number
 }
 
+function isStableSemverTag(tag) {
+  if (!tag) return false;
+  return /^v?\d+\.\d+\.\d+$/.test(tag);
+}
+
+function normalizeGeneratedBody(body) {
+  if (!body) return '';
+  const lines = body.split('\n');
+
+  while (lines.length && !lines[0].trim()) {
+    lines.shift();
+  }
+
+  // LLMs occasionally return a heading even though we ask for body-only output.
+  // Remove a single leading heading so the content remains valid under Unreleased.
+  if (lines.length && /^#{1,2}\s+/.test(lines[0])) {
+    lines.shift();
+    while (lines.length && !lines[0].trim()) {
+      lines.shift();
+    }
+  }
+
+  return lines.join('\n').trim();
+}
+
 function getAllTags() {
   // Newest first
   const raw = run('git tag --sort=-creatordate');
@@ -68,6 +93,8 @@ function getLastTag() {
 /** Last tag that is NOT a pre-release */
 function getLastFullReleaseTag() {
   const tags = getAllTags();
+  const stable = tags.find((t) => isStableSemverTag(t) && !isPreRelease(t));
+  if (stable) return stable;
   return tags.find((t) => !isPreRelease(t)) || null;
 }
 
@@ -79,7 +106,7 @@ function getPreReleaseTagsSinceLastFull() {
   const tags = getAllTags();
   const result = [];
   for (const tag of tags) {
-    if (!isPreRelease(tag)) break; // we hit the previous full release
+    if (isStableSemverTag(tag) && !isPreRelease(tag)) break; // we hit the previous stable full release
     result.push(tag);
   }
   return result.reverse(); // chronological order
@@ -584,6 +611,7 @@ async function main() {
     .replace(/^```(?:markdown)?\n?/i, '')
     .replace(/\n?```$/i, '')
     .trim();
+  newBody = normalizeGeneratedBody(newBody);
 
   core.info('--- Generated Unreleased content ---');
   core.info(newBody);
@@ -669,6 +697,8 @@ if (require.main === module) {
 
 module.exports = {
   isPreRelease,
+  isStableSemverTag,
+  normalizeGeneratedBody,
   extractUnreleased,
   extractChangelogSections,
   formatReleaseHeading,
