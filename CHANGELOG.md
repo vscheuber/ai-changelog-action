@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.0.7] - 2026-08-01
+
+### Added
+- Implemented the promotion of release notes into the versioned changelog section, ensuring that users have access to organized and up-to-date release information (e9b47f9).
+
 ### Changed
 - Simplified the release workflow by removing unused inputs and integrating `version-bump-action` for version computation, streamlining the process for users (#95d160d, #ef54872).
 - Updated the release workflow to include package manifest updates and improved changelog commit logic, enhancing the accuracy and completeness of release documentation (e781c2e).
