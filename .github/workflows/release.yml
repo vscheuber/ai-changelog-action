@@ -39,6 +39,11 @@ jobs:
         with:
           release-type: ${{ inputs.release-type }}
 
+      - name: Update package manifests
+        uses: vscheuber/manifest-version-update-action@v1
+        with:
+          version: ${{ steps.version.outputs.normalized }}
+
       - name: Show release plan
         run: |
           echo "Base version: ${{ steps.version.outputs.base }}"
@@ -68,16 +73,16 @@ jobs:
           set -euo pipefail
           printf '%s\n' "$RELEASE_NOTES" > RELEASE_NOTES.md
 
-      - name: Commit changelog changes
+      - name: Commit changelog and version changes
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
+          git add CHANGELOG.md package.json package-lock.json
           if git diff --cached --quiet; then
-            echo "No changelog changes to commit"
+            echo "No release changes to commit"
           else
-            git commit -m "docs: update CHANGELOG.md for ${{ steps.version.outputs.tag }}"
+            git commit -m "chore: release ${{ steps.version.outputs.tag }}"
             git push origin HEAD
           fi
 
@@ -87,7 +92,14 @@ jobs:
           git fetch --tags
           tag='${{ steps.version.outputs.tag }}'
           if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "Tag ${tag} already exists"
+            existing_commit="$(git rev-list -n 1 "${tag}")"
+            current_commit="$(git rev-parse HEAD)"
+            if [[ "$existing_commit" == "$current_commit" ]]; then
+              echo "Tag ${tag} already exists on the current commit; skipping"
+              exit 0
+            fi
+
+            echo "Tag ${tag} already exists on a different commit"
             exit 1
           fi
           git tag -a "${tag}" -m "Release ${tag}"
