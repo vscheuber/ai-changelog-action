@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.6] - 2026-08-01
+
+### Added
+- Introduced options for specifying the release type in workflow inputs, providing users with more control over release configurations. (commit e04c8f0)
+
+### Fixed
+- Enhanced the clarity of fallback release notes to better communicate functional behavior changes, improving user understanding and reducing ambiguity. (commit db76748)
+
 ## [v1.1.5] - 2026-08-01
 
 ### Changed
