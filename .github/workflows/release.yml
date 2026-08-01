@@ -64,152 +64,17 @@ jobs:
 
       - name: Compute next version
         id: version
-        run: |
-          set -euo pipefail
-
-          release_type='${{ inputs.release-type }}'
-          prerelease_id='${{ inputs.prerelease-identifier }}'
-          current_input='${{ inputs.current-version }}'
-          semver_re='^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?$'
-
-          case "$release_type" in
-            prerelease|patch|minor|major) ;;
-            *)
-              echo "release-type must be one of: prerelease, patch, minor, major"
-              exit 1
-              ;;
-          esac
-
-          base_source=''
-          base_ref=''
-
-          if [[ -n "$current_input" ]]; then
-            if [[ "$current_input" =~ ^v?([0-9]+)$ ]]; then
-              base_tag="${BASH_REMATCH[1]}.0.0"
-              base_source="input-major-alias"
-              base_ref="v${BASH_REMATCH[1]}"
-            else
-              base_tag="$current_input"
-              base_source="input"
-
-              candidate1="$current_input"
-              candidate2="v${current_input#v}"
-              for c in "$candidate1" "$candidate2"; do
-                if git rev-parse -q --verify "refs/tags/${c}" >/dev/null; then
-                  base_ref="$c"
-                  break
-                fi
-              done
-            fi
-          else
-            all_tags="$(git tag --sort=-v:refname)"
-            latest_semver=''
-            latest_major_alias=''
-
-            while IFS= read -r tag; do
-              [[ -z "$tag" ]] && continue
-              stripped="${tag#v}"
-              if [[ -z "$latest_semver" && "$stripped" =~ $semver_re ]]; then
-                latest_semver="$tag"
-              fi
-              if [[ -z "$latest_major_alias" && "$tag" =~ ^v([0-9]+)$ ]]; then
-                latest_major_alias="$tag"
-              fi
-              if [[ -n "$latest_semver" && -n "$latest_major_alias" ]]; then
-                break
-              fi
-            done <<< "$all_tags"
-
-            if [[ -n "$latest_semver" ]]; then
-              base_tag="$latest_semver"
-              base_source="latest-semver-tag"
-              base_ref="$latest_semver"
-            elif [[ -n "$latest_major_alias" ]]; then
-              base_tag="${latest_major_alias#v}.0.0"
-              base_source="major-alias-bootstrap"
-              base_ref="$latest_major_alias"
-            elif [[ -n "$all_tags" ]]; then
-              echo "No semver-compatible tags found. Provide current-version explicitly (for example 1.0.0)."
-              exit 1
-            else
-              base_tag='0.0.0'
-              base_source="no-tags-bootstrap"
-            fi
-          fi
-
-          base="${base_tag#v}"
-          if [[ ! "$base" =~ $semver_re ]]; then
-            echo "Could not parse semver from '$base_tag'"
-            exit 1
-          fi
-
-          major="${BASH_REMATCH[1]}"
-          minor="${BASH_REMATCH[2]}"
-          patch="${BASH_REMATCH[3]}"
-          pre="${BASH_REMATCH[5]:-}"
-
-          stable_major="$major"
-          stable_minor="$minor"
-          stable_patch="$patch"
-
-          if [[ "$release_type" == "prerelease" ]]; then
-            if [[ -n "$pre" ]]; then
-              if [[ "$pre" =~ ^([0-9]+)$ ]]; then
-                num="${BASH_REMATCH[1]}"
-                next="${major}.${minor}.${patch}-$((num + 1))"
-              elif [[ "$pre" =~ ^([A-Za-z0-9-]+)\.([0-9]+)$ ]]; then
-                label="${BASH_REMATCH[1]}"
-                num="${BASH_REMATCH[2]}"
-                next="${major}.${minor}.${patch}-${label}.$((num + 1))"
-              else
-                if [[ -n "$prerelease_id" ]]; then
-                  next="${major}.${minor}.${patch}-${prerelease_id}.1"
-                else
-                  next="${major}.${minor}.${patch}-1"
-                fi
-              fi
-            else
-              if [[ -n "$prerelease_id" ]]; then
-                next="${major}.${minor}.$((patch + 1))-${prerelease_id}.1"
-              else
-                next="${major}.${minor}.$((patch + 1))-1"
-              fi
-            fi
-            is_prerelease='true'
-            action_release_type='prerelease'
-          elif [[ "$release_type" == "patch" ]]; then
-            if [[ -n "$pre" ]]; then
-              next="${stable_major}.${stable_minor}.${stable_patch}"
-            else
-              next="${major}.${minor}.$((patch + 1))"
-            fi
-            is_prerelease='false'
-            action_release_type='full'
-          elif [[ "$release_type" == "minor" ]]; then
-            next="${stable_major}.$((stable_minor + 1)).0"
-            is_prerelease='false'
-            action_release_type='full'
-          else
-            next="$((stable_major + 1)).0.0"
-            is_prerelease='false'
-            action_release_type='full'
-          fi
-
-          echo "base=${base}" >> "$GITHUB_OUTPUT"
-          echo "base_source=${base_source}" >> "$GITHUB_OUTPUT"
-          echo "base_ref=${base_ref}" >> "$GITHUB_OUTPUT"
-          echo "release_type=${release_type}" >> "$GITHUB_OUTPUT"
-          echo "action_release_type=${action_release_type}" >> "$GITHUB_OUTPUT"
-          echo "normalized=${next}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${next}" >> "$GITHUB_OUTPUT"
-          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+        uses: vscheuber/version-bump-action@v1
+        with:
+          release-type: ${{ inputs.release-type }}
+          current-version: ${{ inputs.current-version }}
+          prerelease-identifier: ${{ inputs.prerelease-identifier }}
 
       - name: Show release plan
         run: |
           echo "Base version: ${{ steps.version.outputs.base }}"
           echo "Base source: ${{ steps.version.outputs.base_source }}"
           echo "Base ref: ${{ steps.version.outputs.base_ref || '(none)' }}"
-          echo "Release type: ${{ steps.version.outputs.release_type }}"
           echo "Action release-type: ${{ steps.version.outputs.action_release_type }}"
           echo "Force release: ${{ inputs.force-release }}"
           echo "Next version: ${{ steps.version.outputs.normalized }}"
@@ -264,47 +129,12 @@ jobs:
           version: ${{ steps.version.outputs.normalized }}
           commit: false
 
-      - name: Promote Unreleased section and extract release notes
-        id: promote
+      - name: Write release notes from AI action output
         env:
-          CHANGELOG_PATH: CHANGELOG.md
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_NOTES: ${{ steps.changelog.outputs.unreleased-content }}
         run: |
-          node - <<'NODE'
-          const fs = require('fs');
-          const path = process.env.CHANGELOG_PATH || 'CHANGELOG.md';
-          const tag = process.env.RELEASE_TAG;
-          const date = new Date().toISOString().slice(0, 10);
-
-          if (!fs.existsSync(path)) {
-            throw new Error(`${path} does not exist`);
-          }
-
-          const content = fs.readFileSync(path, 'utf8');
-          const match = content.match(/^##?\s+Unreleased\s*\n([\s\S]*?)(?=^##?\s+|(?![\s\S]))/im);
-          if (!match) {
-            throw new Error('Could not find an Unreleased section in CHANGELOG.md');
-          }
-
-          const unreleasedBody = match[1].trim();
-          const normalizedBody = unreleasedBody.replace(/\r\n/g, '\n').trim();
-          if (!normalizedBody || normalizedBody === '- No user-facing changes.') {
-            throw new Error('No changelog changes detected under Unreleased; aborting release.');
-          }
-
-          const releaseBody = unreleasedBody || '- No user-facing changes.';
-          const releaseHeading = `## [${tag}] - ${date}`;
-
-          if (content.includes(releaseHeading)) {
-            throw new Error(`Release heading already exists: ${releaseHeading}`);
-          }
-
-          const replacement = `## Unreleased\n\n${releaseHeading}\n\n${releaseBody}\n\n`;
-          const updated = content.replace(match[0], replacement).replace(/\n{3,}/g, '\n\n');
-
-          fs.writeFileSync(path, updated, 'utf8');
-          fs.writeFileSync('RELEASE_NOTES.md', releaseBody + '\n', 'utf8');
-          NODE
+          set -euo pipefail
+          printf '%s\n' "$RELEASE_NOTES" > RELEASE_NOTES.md
 
       - name: Commit changelog changes
         run: |
