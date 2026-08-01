@@ -223,17 +223,17 @@ function buildFallbackReleaseNotes(kind) {
     case 'pipeline-only':
       return [
         '### Changed',
-        '- Internal pipeline update release. This release updates CI/CD or release automation under `.github/` without changing the action\'s functional behavior.',
+        '- Internal pipeline update release. This release updates CI/CD or release automation under `.github/` without changing functional behavior.',
       ].join('\n');
     case 'internal-only':
       return [
         '### Changed',
-        '- Internal changes only. This release does not introduce functional changes to the action behavior.',
+        '- Internal changes only. This release does not introduce functional behavior changes.',
       ].join('\n');
     case 'cosmetic-release':
       return [
         '### Changed',
-        '- Cosmetic version update release. This release records a version or release-state change without additional functional code changes.',
+        '- Cosmetic version update release. This release records a version or release-state change without additional functional behavior changes.',
       ].join('\n');
     default:
       return '';
