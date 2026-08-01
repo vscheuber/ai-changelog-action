@@ -8,6 +8,7 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ### Changed
 - Simplified the release workflow by removing unused inputs and integrating `version-bump-action` for version computation, streamlining the process for users (#95d160d, #ef54872).
+- Updated the release workflow to include package manifest updates and improved changelog commit logic, enhancing the accuracy and completeness of release documentation (e781c2e).
 
 ## [v1.0.5] - 2026-07-28
 
