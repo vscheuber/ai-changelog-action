@@ -6,6 +6,10 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+### Added
+- Implemented stable semantic versioning (semver) tag detection to improve version management and ensure consistent versioning practices. (#27e7827)
+- Enhanced changelog generation by normalizing the output from the language model, leading to clearer and more consistent changelog entries. (#27e7827)
+
 ## [v1.0.8-1] - 2026-08-01
 
 ### Added
