@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.8] - 2026-08-02
+
+### Fixed
+- Enhanced fallback logic to prevent duplicate release lines when no pre-release notes are present, improving the clarity of generated changelogs. (commit f093f69)
+
 ## [v1.1.7] - 2026-08-02
 
 ### Changed
