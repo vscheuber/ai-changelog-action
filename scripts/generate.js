@@ -396,6 +396,33 @@ function filterGroundedReleaseNotes(body, { commitEntries, prs }) {
   return compacted.join('\n').trim();
 }
 
+function mergePreservingExistingUnreleased(existingBody, generatedBody) {
+  const preserved = (existingBody || '').trim();
+  const generated = (generatedBody || '').trim();
+
+  if (!preserved) return generated;
+  if (!generated) return preserved;
+  if (generated === preserved) return preserved;
+
+  const preservedLines = preserved.split('\n').map((line) => line.trim());
+  const preservedLineSet = new Set(preservedLines.filter(Boolean));
+
+  const generatedLines = generated.split('\n');
+  const additionalLines = [];
+  for (const line of generatedLines) {
+    const trimmed = line.trim();
+    if (trimmed && preservedLineSet.has(trimmed)) {
+      continue;
+    }
+    additionalLines.push(line);
+  }
+
+  const additional = additionalLines.join('\n').trim();
+  if (!additional) return preserved;
+
+  return `${preserved}\n\n${additional}`.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function getDiffStat(ref) {
   if (!ref) return '';
   return run(`git diff --stat ${ref}..HEAD`);
@@ -941,6 +968,10 @@ async function main() {
     if (!newBody) {
       newBody = buildDeterministicCommitNotes(commitEntries);
     }
+
+    // Preserve pre-existing Unreleased entries verbatim, even if generated
+    // content was de-duplicated or filtered by grounding rules.
+    newBody = mergePreservingExistingUnreleased(existingBody, newBody);
   }
 
   core.info('--- Generated Unreleased content ---');
@@ -1036,6 +1067,7 @@ module.exports = {
   buildDeterministicCommitNotes,
   isFunctionalActionPath,
   filterGroundedReleaseNotes,
+  mergePreservingExistingUnreleased,
   getPreReleaseTagsSinceLastFullFromTags,
   classifyReleaseFallback,
   buildFallbackReleaseNotes,

@@ -10,6 +10,7 @@ const {
   buildDeterministicCommitNotes,
   isFunctionalActionPath,
   filterGroundedReleaseNotes,
+  mergePreservingExistingUnreleased,
   classifyReleaseFallback,
   buildFallbackReleaseNotes,
   extractUnreleased,
@@ -186,6 +187,33 @@ test('filterGroundedReleaseNotes keeps only bullets tied to current commit or PR
   assert.doesNotMatch(filtered, /49efe6f/);
   assert.match(filtered, /e7ec998/);
   assert.match(filtered, /#42/);
+});
+
+test('mergePreservingExistingUnreleased keeps existing content verbatim when generated body is empty', () => {
+  const existing = [
+    '### Changed',
+    '- Manual note without commit evidence.',
+  ].join('\n');
+
+  const merged = mergePreservingExistingUnreleased(existing, '');
+  assert.equal(merged, existing);
+});
+
+test('mergePreservingExistingUnreleased keeps existing content and appends new generated lines', () => {
+  const existing = [
+    '### Changed',
+    '- Manual note without commit evidence.',
+  ].join('\n');
+
+  const generated = [
+    '### Changed',
+    '- Manual note without commit evidence.',
+    '- New grounded capability. (commit e7ec998)',
+  ].join('\n');
+
+  const merged = mergePreservingExistingUnreleased(existing, generated);
+  assert.match(merged, /Manual note without commit evidence\./);
+  assert.match(merged, /New grounded capability\. \(commit e7ec998\)/);
 });
 
 test('buildDeterministicCommitNotes creates commit-grounded fallback notes', () => {

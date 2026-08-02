@@ -11,6 +11,14 @@ It gathers:
 
 …then asks the LLM to produce a **user-focused** changelog entry while **preserving** existing Unreleased content.
 
+### Verbatim preservation guarantee
+
+Any notes that already exist under `## Unreleased` are preserved **verbatim**.
+
+- Existing entries are retained even if newly generated lines are de-duplicated or filtered.
+- Generated content is merged in as additional notes, rather than replacing manually curated unreleased entries.
+- This guarantees that hand-written changelog notes survive promotion-oriented runs.
+
 ### Special behaviour for full (stable) releases
 
 When the action detects (or is told) that you are preparing a **full release**, it also:
