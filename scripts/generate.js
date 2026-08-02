@@ -930,7 +930,7 @@ async function main() {
     .replace(/\n?```$/i, '')
     .trim();
   newBody = normalizeGeneratedBody(newBody);
-  if (!preReleaseNotes.length) {
+  if (!fallbackKind && !preReleaseNotes.length) {
     newBody = removeDuplicateReleaseLines(newBody, previousReleaseNotes);
   }
   if (!fallbackKind) {

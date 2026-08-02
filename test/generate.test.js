@@ -126,6 +126,14 @@ test('buildFallbackReleaseNotes returns deterministic internal release notes', (
   assert.match(buildFallbackReleaseNotes('cosmetic-release'), /Cosmetic version update release/);
 });
 
+test('pipeline-only fallback notes are preserved even when identical to previous release notes', () => {
+  const fallback = buildFallbackReleaseNotes('pipeline-only');
+  const deduped = removeDuplicateReleaseLines(fallback, fallback);
+
+  assert.equal(deduped, '');
+  assert.match(fallback, /pipeline update release|Internal pipeline update release/i);
+});
+
 test('removeDuplicateReleaseLines removes bullets already present in previous release notes', () => {
   const current = [
     '### Added',
