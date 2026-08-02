@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.7] - 2026-08-02
+
+### Changed
+- Internal pipeline update release. This release updates CI/CD or release automation under `.github/` without changing functional behavior.
+
 ## [v1.1.6] - 2026-08-01
 
 ### Added
