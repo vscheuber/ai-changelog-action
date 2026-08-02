@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.9] - 2026-08-02
+
+### Added
+- Enhanced merging logic to preserve existing "Unreleased" entries while appending new generated content, ensuring that user modifications are retained and new updates are seamlessly integrated. This improvement enhances the usability and reliability of the changelog generation process. (commit b97b937)
+
 ## [v1.1.8] - 2026-08-02
 
 ### Fixed
