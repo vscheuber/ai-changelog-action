@@ -46,6 +46,17 @@ jobs:
         with:
           release-type: ${{ inputs.release-type }}
 
+      - name: Release preflight checks
+        uses: vscheuber/release-preflight-action@v1
+        with:
+          candidate-version: ${{ steps.version.outputs.normalized }}
+          candidate-tag: ${{ steps.version.outputs.tag }}
+          package-name: 'ai-changelog-action'
+          current-version: ${{ steps.version.outputs.base }}
+          check-remote-tag: true
+          check-npm-version: true
+          check-version-drift: true
+
       - name: Update package manifests
         uses: vscheuber/manifest-version-update-action@v1
         with:
