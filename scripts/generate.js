@@ -98,6 +98,66 @@ function getBulletLines(body) {
     .filter((line) => /^-\s+/.test(line));
 }
 
+function compactHeadingsWithoutBullets(lines) {
+  const compacted = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (/^###\s+/.test(trimmed)) {
+      let hasBullet = false;
+      for (let lookahead = index + 1; lookahead < lines.length; lookahead += 1) {
+        const nextTrimmed = lines[lookahead].trim();
+        if (/^###\s+/.test(nextTrimmed)) break;
+        if (/^-\s+/.test(nextTrimmed)) {
+          hasBullet = true;
+          break;
+        }
+      }
+      if (!hasBullet) {
+        continue;
+      }
+    }
+
+    if (trimmed === '' && compacted[compacted.length - 1] === '') {
+      continue;
+    }
+
+    compacted.push(line);
+  }
+  return compacted;
+}
+
+/** Similarity (0..1) between two already-normalized bullet strings. */
+function bulletSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.9;
+
+  // Bullets that share a long common opening (the LLM keeps the developer's
+  // original phrasing and appends detail/evidence, or vice versa) are the
+  // same change even though the tail text differs.
+  const minLen = Math.min(a.length, b.length);
+  let prefixLen = 0;
+  while (prefixLen < minLen && a[prefixLen] === b[prefixLen]) prefixLen += 1;
+  const prefixRatio = minLen ? prefixLen / minLen : 0;
+
+  const tokensA = new Set(a.split(' ').filter(Boolean));
+  const tokensB = new Set(b.split(' ').filter(Boolean));
+  let jaccard = 0;
+  if (tokensA.size && tokensB.size) {
+    let shared = 0;
+    for (const token of tokensA) {
+      if (tokensB.has(token)) shared += 1;
+    }
+    jaccard = shared / Math.max(tokensA.size, tokensB.size);
+  }
+
+  return Math.max(prefixRatio, jaccard);
+}
+
+const DUPLICATE_BULLET_SIMILARITY_THRESHOLD = 0.6;
+
 function removeDuplicateReleaseLines(body, previousReleaseBody) {
   if (!body || !previousReleaseBody) return body;
 
@@ -128,34 +188,7 @@ function removeDuplicateReleaseLines(body, previousReleaseBody) {
     filtered.push(line);
   }
 
-  const compacted = [];
-  for (let index = 0; index < filtered.length; index += 1) {
-    const line = filtered[index];
-    const trimmed = line.trim();
-
-    if (/^###\s+/.test(trimmed)) {
-      let hasBullet = false;
-      for (let lookahead = index + 1; lookahead < filtered.length; lookahead += 1) {
-        const nextTrimmed = filtered[lookahead].trim();
-        if (/^###\s+/.test(nextTrimmed)) break;
-        if (/^-\s+/.test(nextTrimmed)) {
-          hasBullet = true;
-          break;
-        }
-      }
-      if (!hasBullet) {
-        continue;
-      }
-    }
-
-    if (trimmed === '' && compacted[compacted.length - 1] === '') {
-      continue;
-    }
-
-    compacted.push(line);
-  }
-
-  return compacted.join('\n').trim();
+  return compactHeadingsWithoutBullets(filtered).join('\n').trim();
 }
 
 function hasRelatedActivity(related) {
@@ -366,36 +399,22 @@ function filterGroundedReleaseNotes(body, { commitEntries, prs }) {
     }
   }
 
-  const compacted = [];
-  for (let index = 0; index < filtered.length; index += 1) {
-    const line = filtered[index];
-    const trimmed = line.trim();
-
-    if (/^###\s+/.test(trimmed)) {
-      let hasBullet = false;
-      for (let lookahead = index + 1; lookahead < filtered.length; lookahead += 1) {
-        const nextTrimmed = filtered[lookahead].trim();
-        if (/^###\s+/.test(nextTrimmed)) break;
-        if (/^-\s+/.test(nextTrimmed)) {
-          hasBullet = true;
-          break;
-        }
-      }
-      if (!hasBullet) {
-        continue;
-      }
-    }
-
-    if (trimmed === '' && compacted[compacted.length - 1] === '') {
-      continue;
-    }
-
-    compacted.push(line);
-  }
-
-  return compacted.join('\n').trim();
+  return compactHeadingsWithoutBullets(filtered).join('\n').trim();
 }
 
+/**
+ * Merge generated content into the existing Unreleased body without duplicating
+ * changes the developer already described, even when the LLM rephrases or
+ * expands on them.
+ *
+ * - Bullets that are near-duplicates (by normalized text or word overlap) of an
+ *   existing bullet are never appended as a second, separate bullet.
+ * - When the generated version of a near-duplicate bullet is more detailed than
+ *   the existing one (e.g. it adds specifics and/or PR/commit evidence), the
+ *   existing bullet is expanded in place with the generated text.
+ * - When the existing bullet is already as detailed (or more), it is kept as-is.
+ * - Genuinely new bullets (no similar existing counterpart) are appended.
+ */
 function mergePreservingExistingUnreleased(existingBody, generatedBody) {
   const preserved = (existingBody || '').trim();
   const generated = (generatedBody || '').trim();
@@ -404,23 +423,60 @@ function mergePreservingExistingUnreleased(existingBody, generatedBody) {
   if (!generated) return preserved;
   if (generated === preserved) return preserved;
 
-  const preservedLines = preserved.split('\n').map((line) => line.trim());
-  const preservedLineSet = new Set(preservedLines.filter(Boolean));
+  const workingLines = preserved.split('\n');
+  const preservedBullets = workingLines
+    .map((line, index) => ({ index, trimmed: line.trim() }))
+    .filter((entry) => /^-\s+/.test(entry.trimmed))
+    .map((entry) => ({ ...entry, normalized: normalizeComparableLine(entry.trimmed) }));
+
+  const preservedLineSet = new Set(workingLines.map((line) => line.trim()).filter(Boolean));
 
   const generatedLines = generated.split('\n');
-  const additionalLines = [];
-  for (const line of generatedLines) {
+  const consumedGeneratedIndices = new Set();
+
+  generatedLines.forEach((line, idx) => {
     const trimmed = line.trim();
-    if (trimmed && preservedLineSet.has(trimmed)) {
-      continue;
+    if (!/^-\s+/.test(trimmed)) return;
+
+    const normalizedGenerated = normalizeComparableLine(trimmed);
+    if (!normalizedGenerated) return;
+
+    let bestMatch = null;
+    let bestScore = 0;
+    for (const bullet of preservedBullets) {
+      const score = bulletSimilarity(bullet.normalized, normalizedGenerated);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = bullet;
+      }
     }
+
+    if (!bestMatch || bestScore < DUPLICATE_BULLET_SIMILARITY_THRESHOLD) return;
+
+    consumedGeneratedIndices.add(idx);
+
+    // The generated wording covers strictly more ground than the existing
+    // bullet (e.g. adds detail and/or evidence) – expand it in place instead
+    // of leaving a thin duplicate and appending a fuller one separately.
+    if (normalizedGenerated.length > bestMatch.normalized.length) {
+      workingLines[bestMatch.index] = line;
+      bestMatch.normalized = normalizedGenerated;
+    }
+  });
+
+  const additionalLines = [];
+  generatedLines.forEach((line, idx) => {
+    if (consumedGeneratedIndices.has(idx)) return;
+    const trimmed = line.trim();
+    if (trimmed && preservedLineSet.has(trimmed)) return;
     additionalLines.push(line);
-  }
+  });
 
-  const additional = additionalLines.join('\n').trim();
-  if (!additional) return preserved;
+  const mergedPreserved = workingLines.join('\n').trim();
+  const additional = compactHeadingsWithoutBullets(additionalLines).join('\n').trim();
+  if (!additional) return mergedPreserved;
 
-  return `${preserved}\n\n${additional}`.replace(/\n{3,}/g, '\n\n').trim();
+  return `${mergedPreserved}\n\n${additional}`.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function getDiffStat(ref) {
@@ -681,7 +737,11 @@ RULES:
 5. If a related library has changes that affect users of this project, mention them.
 6. Do NOT restate capabilities that were already described in the most recent release unless the current commit range materially changes or extends them.
 7. Every bullet MUST end with evidence from the current release range, using either \`(#123)\` for a current PR or \`(commit abc1234)\` for a current commit.
-8. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
+8. CRITICAL – never create a second bullet for a change that an existing bullet in EXISTING UNRELEASED CONTENT already describes, even if you would phrase it differently. Before adding a bullet, check whether it covers the same underlying change (same commit/PR, same behavior) as an existing bullet:
+   - If the existing bullet is thin or vague, REWRITE that same bullet in place with more detail and evidence – do not also emit a separate, differently-worded bullet about the same change.
+   - If the existing bullet is already clear and sufficiently detailed, leave it exactly as written and do not add a rephrased or evidence-only near-duplicate of it.
+   - Only add a brand-new bullet when it describes a change that no existing bullet already covers.
+9. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
 
 EXISTING UNRELEASED CONTENT (preserve / merge):
 ${existingUnreleased || '(empty)'}

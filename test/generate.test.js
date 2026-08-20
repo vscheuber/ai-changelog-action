@@ -216,6 +216,45 @@ test('mergePreservingExistingUnreleased keeps existing content and appends new g
   assert.match(merged, /New grounded capability\. \(commit e7ec998\)/);
 });
 
+test('mergePreservingExistingUnreleased expands a thin existing bullet in place instead of duplicating it', () => {
+  const existing = [
+    '### Changed',
+    '- Frodo shell autocomplete and `help()` output now indicate which parameters are optional.',
+    '- Updated `@rockcarver/frodo-lib` to version 4.4.1, which may include improvements affecting the behavior and performance of Frodo CLI. (3239da2a)',
+  ].join('\n');
+
+  const generated = [
+    '### Changed',
+    '- Frodo shell autocomplete and `help()` output now indicate which parameters are optional. The shell autocomplete scaffolds append `?` to parameter names marked as optional, and the `help()` output labels optional parameters with a `(optional)` tag. (#668, 66b9f1e7)',
+  ].join('\n');
+
+  const merged = mergePreservingExistingUnreleased(existing, generated);
+
+  // The expanded wording replaces the thin bullet in place...
+  assert.match(merged, /scaffolds append `\?` to parameter names/);
+  // ...and there is no second, separate bullet restating the same change.
+  const occurrences = (merged.match(/parameters are optional/g) || []).length;
+  assert.equal(occurrences, 1);
+  // Unrelated existing bullets are untouched.
+  assert.match(merged, /Updated `@rockcarver\/frodo-lib` to version 4\.4\.1/);
+});
+
+test('mergePreservingExistingUnreleased keeps a sufficiently detailed existing bullet as-is', () => {
+  const existing = [
+    '### Changed',
+    '- Frodo shell autocomplete and `help()` output now indicate which parameters are optional. The shell autocomplete scaffolds append `?` to parameter names marked as optional, and the `help()` output labels optional parameters with a `(optional)` tag. (#668, 66b9f1e7)',
+  ].join('\n');
+
+  const generated = [
+    '### Changed',
+    '- Frodo shell autocomplete and `help()` output now indicate which parameters are optional. (#668, 66b9f1e7)',
+  ].join('\n');
+
+  const merged = mergePreservingExistingUnreleased(existing, generated);
+
+  assert.equal(merged, existing);
+});
+
 test('buildDeterministicCommitNotes creates commit-grounded fallback notes', () => {
   const notes = buildDeterministicCommitNotes([
     { sha: 'abc1234', subject: 'feat: add grounded fallback', author: 'test' },
