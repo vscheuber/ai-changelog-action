@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.11] - 2026-08-20
+
+### Added
+- Improved handling of changelog entries to prevent duplication of developer-written "Unreleased" entries with reworded LLM output. This enhancement ensures that manually written entries are preserved without unnecessary repetition. (commit 29a5ed3)
+
 ## [v1.1.10] - 2026-08-03
 
 ### Changed
