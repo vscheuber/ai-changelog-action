@@ -158,6 +158,29 @@ function bulletSimilarity(a, b) {
 
 const DUPLICATE_BULLET_SIMILARITY_THRESHOLD = 0.6;
 
+const CANONICAL_CHANGELOG_CATEGORIES = ['Added', 'Changed', 'Deprecated', 'Removed', 'Fixed', 'Security'];
+
+const CATEGORY_DEFINITIONS = {
+  Added: 'a new capability, command, flag, or option that did not exist before.',
+  Changed: 'a change to the behavior of something that already existed.',
+  Deprecated: 'a feature that still works but is now discouraged and slated for removal.',
+  Removed: 'a feature, command, flag, or option that no longer exists.',
+  Fixed: 'a bug fix – incorrect behavior that is now correct.',
+  Security: 'a fix for a vulnerability or other security-relevant hardening.',
+};
+
+function buildCategoryRulesText() {
+  const definitions = CANONICAL_CHANGELOG_CATEGORIES
+    .map((category) => `   - ${category}: ${CATEGORY_DEFINITIONS[category]}`)
+    .join('\n');
+
+  return `Group changes under "### <Category>" headings, using ONLY these categories and no others:
+${definitions}
+   Emit categories in exactly this order when present, and omit any category with no bullets: ${CANONICAL_CHANGELOG_CATEGORIES.join(', ')}.
+   Never invent a different heading (e.g. "Updated", "Documentation", "Improvements"). If a change doesn't clearly fit Added, Deprecated, Removed, Fixed, or Security, put it under Changed.
+   Never emit a bullet without a "### <Category>" heading above it.`;
+}
+
 function removeDuplicateReleaseLines(body, previousReleaseBody) {
   if (!body || !previousReleaseBody) return body;
 
@@ -451,14 +474,38 @@ function mergePreservingExistingUnreleased(existingBody, generatedBody) {
       }
     }
 
-    if (!bestMatch || bestScore < DUPLICATE_BULLET_SIMILARITY_THRESHOLD) return;
+    if (!bestMatch || bestScore < DUPLICATE_BULLET_SIMILARITY_THRESHOLD) {
+      // A genuine tightening of a verbose bullet can drop enough shared
+      // vocabulary that jaccard/prefix similarity no longer clears the
+      // threshold, even though it is unmistakably the same change. Fall
+      // back to the same precise subject-flag signal the whole-body pass
+      // uses, so brevity rewrites of flag-anchored bullets are still found.
+      const generatedFlag = extractCodeSpans(trimmed);
+      bestMatch = generatedFlag.size
+        ? preservedBullets.find((bullet) => extractCodeSpans(bullet.trimmed).size &&
+            [...extractCodeSpans(bullet.trimmed)].some((flag) => generatedFlag.has(flag)))
+        : undefined;
+      if (!bestMatch) return;
+    }
 
     consumedGeneratedIndices.add(idx);
 
     // The generated wording covers strictly more ground than the existing
     // bullet (e.g. adds detail and/or evidence) – expand it in place instead
     // of leaving a thin duplicate and appending a fuller one separately.
-    if (normalizedGenerated.length > bestMatch.normalized.length) {
+    //
+    // OR: the generated wording is a genuine tightening of an over-verbose
+    // existing bullet (increasingly common now that entries are often
+    // written by coding agents, which tend to be complete but not brief) –
+    // accept it in place, but ONLY when it demonstrably keeps every concrete
+    // marker (flag name, PR/commit evidence) the existing bullet has. This
+    // is a deterministic, checkable proxy for "no information was lost";
+    // it deliberately cannot verify prose nuance was preserved, so it errs
+    // towards keeping the existing bullet whenever that check fails.
+    if (
+      normalizedGenerated.length > bestMatch.normalized.length ||
+      preservesAllMarkers(bestMatch.trimmed, line)
+    ) {
       workingLines[bestMatch.index] = line;
       bestMatch.normalized = normalizedGenerated;
     }
@@ -477,6 +524,302 @@ function mergePreservingExistingUnreleased(existingBody, generatedBody) {
   if (!additional) return mergedPreserved;
 
   return `${mergedPreserved}\n\n${additional}`.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Extract the set of backtick-quoted CLI flag/option spans (e.g.
+ * `--oauth-scope <scope...>`, normalized to `--oauth-scope`) from a raw
+ * bullet line. Two bullets naming the exact same flag are almost always
+ * describing the same underlying change, even when their surrounding prose
+ * is completely different – a stronger, orthogonal signal to the
+ * prefix/word-overlap heuristic in `bulletSimilarity`.
+ *
+ * Deliberately restricted to flag-shaped spans (leading `-`/`--`): a shared
+ * base command name like `` `frodo mcp server start` `` is common to dozens
+ * of unrelated bullets in a real changelog and is NOT reliable duplicate
+ * evidence on its own – trusting it caused unrelated bullets to be wrongly
+ * discarded as "duplicates" of each other.
+ */
+// Matches a backtick span that is ENTIRELY a single flag/option, optionally
+// followed by one placeholder argument (`<foo>`, `...`, or both) – e.g.
+// `--oauth-scope`, `--oauth-scope <scope...>`. A span combining a command
+// name with a flag (`` `frodo mcp server start --oauth-resource-server` ``)
+// or multiple flag aliases (`` `-a, --active-only` ``) deliberately does NOT
+// match: those are either too generic (shared by many unrelated bullets) or
+// not worth the complexity of decomposing.
+const CODE_SPAN_FLAG_RE = /^-{1,2}[a-z0-9][\w-]*(?:[.,]?\s*(?:<[^>]+>|\.\.\.))*$/i;
+
+/** Every flag-shaped backtick span in the bullet (order not significant). */
+function extractAllFlagSpans(text) {
+  if (!text) return new Set();
+  const spans = text.match(/`[^`]+`/g) || [];
+  const flags = new Set();
+  for (const span of spans) {
+    const inner = span.slice(1, -1).trim();
+    if (CODE_SPAN_FLAG_RE.test(inner)) {
+      flags.add(inner.split(/\s/)[0].toLowerCase());
+    }
+  }
+  return flags;
+}
+
+/**
+ * Only the FIRST flag-shaped span in the bullet counts – a well-formed
+ * bullet states its subject flag up front ("Added `--foo` ..."/"Fixed
+ * `--foo`'s ..."). A flag mentioned later in the prose is typically an
+ * incidental cross-reference to a DIFFERENT change (e.g. "...reached only
+ * after fixing `--registered-client-id`'s proxy to be discoverable at all
+ * (see above)" inside a bullet that is actually about `--oauth-scope`), and
+ * trusting it as duplicate evidence causes unrelated bullets about
+ * different flags to be wrongly collapsed into one another. Used for
+ * deciding whether two bullets are ABOUT the same thing.
+ */
+function extractCodeSpans(text) {
+  if (!text) return new Set();
+  const spans = text.match(/`[^`]+`/g) || [];
+  for (const span of spans) {
+    const inner = span.slice(1, -1).trim();
+    if (CODE_SPAN_FLAG_RE.test(inner)) {
+      return new Set([inner.split(/\s/)[0].toLowerCase()]);
+    }
+  }
+  return new Set();
+}
+
+function extractEvidenceRefs(text) {
+  if (!text) return new Set();
+  const matches = text.match(/\((?:#\d+|commit\s+[0-9a-f]{7,40})\)/gi) || [];
+  return new Set(matches.map((ref) => ref.toLowerCase()));
+}
+
+/**
+ * True when `candidate` mentions every flag AND every PR/commit evidence
+ * reference that `original` does – a deterministic, checkable (if
+ * imperfect) proxy for "this rewrite didn't silently drop a concrete fact",
+ * used to allow a shorter, tightened rewrite of a bullet to replace a more
+ * verbose one. It cannot verify that prose nuance survived (e.g. a
+ * qualifying detail with no flag/PR/commit attached to it), so it requires
+ * at least one flag to anchor the check on and returns `false` – the safe
+ * default, meaning "keep the original" – when there is none.
+ */
+function preservesAllMarkers(original, candidate) {
+  const originalFlags = extractAllFlagSpans(original);
+  if (!originalFlags.size) return false;
+
+  const candidateFlags = extractAllFlagSpans(candidate);
+  for (const flag of originalFlags) {
+    if (!candidateFlags.has(flag)) return false;
+  }
+
+  const candidateRefs = extractEvidenceRefs(candidate);
+  for (const ref of extractEvidenceRefs(original)) {
+    if (!candidateRefs.has(ref)) return false;
+  }
+
+  return true;
+}
+
+// Below this normalized length, containment/overlap checks are unreliable –
+// short strings trivially "contain" one another or share most of their few
+// tokens by coincidence (this is exactly what produced a false match between
+// two distinct, tersely-worded bullets during testing).
+const MIN_COMPARABLE_LENGTH = 20;
+
+function areBulletsDuplicates(rawA, rawB) {
+  if (!rawA || !rawB) return false;
+
+  const normalizedA = normalizeComparableLine(rawA);
+  const normalizedB = normalizeComparableLine(rawB);
+  if (normalizedA === normalizedB) return true;
+
+  // Deliberately NOT using bulletSimilarity's general jaccard/prefix scoring
+  // here: on real, long, technically-dense bullets that share a lot of
+  // incidental vocabulary (same subsystem, same connective words), it scores
+  // well below its own 0.6 threshold for genuine near-duplicates while still
+  // producing false positives between clearly distinct bullets – see the
+  // regression test built from the real frodo-cli v4.15.0 CHANGELOG.md
+  // content. Exact/containment matching plus the precise subject-flag check
+  // below are the only signals trustworthy enough for a whole-body pass.
+  if (
+    normalizedA.length > MIN_COMPARABLE_LENGTH &&
+    normalizedB.length > MIN_COMPARABLE_LENGTH &&
+    (normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA))
+  ) {
+    return true;
+  }
+
+  const spansA = extractCodeSpans(rawA);
+  if (!spansA.size) return false;
+  const spansB = extractCodeSpans(rawB);
+  for (const span of spansA) {
+    if (spansB.has(span)) return true;
+  }
+  return false;
+}
+
+const EVIDENCE_TAG_RE = /\((?:#\d+|commit\s+[0-9a-f]{7,40})\)/i;
+const CLOSE_LENGTH_DELTA = 20;
+
+/** Of two bullets describing the same change, keep the more informative one. */
+function pickMoreDetailedBullet(rawA, rawB) {
+  if (!rawA) return rawB;
+  if (!rawB) return rawA;
+
+  const lengthA = normalizeComparableLine(rawA).length;
+  const lengthB = normalizeComparableLine(rawB).length;
+
+  if (Math.abs(lengthA - lengthB) > CLOSE_LENGTH_DELTA) {
+    return lengthA >= lengthB ? rawA : rawB;
+  }
+
+  const hasEvidenceA = EVIDENCE_TAG_RE.test(rawA);
+  const hasEvidenceB = EVIDENCE_TAG_RE.test(rawB);
+  if (hasEvidenceA !== hasEvidenceB) {
+    return hasEvidenceA ? rawA : rawB;
+  }
+
+  return lengthA >= lengthB ? rawA : rawB;
+}
+
+function canonicalizeHeadingName(headingText) {
+  if (!headingText) return null;
+  const normalized = headingText.trim().toLowerCase();
+  return (
+    CANONICAL_CHANGELOG_CATEGORIES.find((category) => category.toLowerCase() === normalized) || null
+  );
+}
+
+/**
+ * Deterministic leading-verb classifier. Returns a canonical category when
+ * the bullet's own wording confidently signals one, or `null` when it
+ * doesn't (callers fall back to the bullet's heading, then to "Changed").
+ *
+ * This is checked BEFORE the heading, not only as a fallback for a missing
+ * one: a heading inherited across a merge (e.g. a run of bullets that landed
+ * under an unrelated "### Fixed" purely because that was the last heading
+ * physically present before them, with no heading of their own) is not
+ * trustworthy just because it parses as canonical – the real-world case this
+ * guards against is exactly that shape.
+ */
+function classifyBulletCategory(bulletText) {
+  const text = (bulletText || '').replace(/^-\s+/, '').trim();
+
+  if (/^(removed|deleted|dropped)\b/i.test(text)) return 'Removed';
+  if (/^deprecated\b/i.test(text)) return 'Deprecated';
+  if (/^(fixed|resolved|corrected)\b/i.test(text)) return 'Fixed';
+  if (/\b(vulnerability|CVE-\d|security)\b/i.test(text)) return 'Security';
+  if (/^(added|introduced|new|implemented)\b/i.test(text)) return 'Added';
+  return null;
+}
+
+/**
+ * Split a changelog body into ordered {heading, bullets[]} groups. Bullets
+ * appearing before the first "### " heading form a leading group with
+ * `heading: null`.
+ */
+function parseChangelogGroups(body) {
+  const groups = [];
+  let current = { heading: null, bullets: [] };
+
+  for (const rawLine of (body || '').split('\n')) {
+    const trimmed = rawLine.trim();
+    const headingMatch = trimmed.match(/^###\s+(.+)$/);
+
+    if (headingMatch) {
+      if (current.heading !== null || current.bullets.length) {
+        groups.push(current);
+      }
+      current = { heading: headingMatch[1].trim(), bullets: [] };
+      continue;
+    }
+
+    if (/^-\s+/.test(trimmed)) {
+      current.bullets.push(trimmed);
+    }
+  }
+
+  if (current.heading !== null || current.bullets.length) {
+    groups.push(current);
+  }
+
+  return groups;
+}
+
+/**
+ * Final, deterministic safety net that runs on the fully-merged body:
+ * collapses duplicate/near-duplicate bullets regardless of which section
+ * they landed in (keeping the more detailed survivor under ITS OWN original
+ * heading), then re-buckets every surviving bullet into the canonical Keep a
+ * Changelog category set and re-emits it in canonical order.
+ */
+function resolveBulletCategory(text, heading) {
+  return classifyBulletCategory(text) || canonicalizeHeadingName(heading) || 'Changed';
+}
+
+function dedupeAndCanonicalizeBullets(groups) {
+  const survivors = [];
+
+  for (const group of groups) {
+    for (const bullet of group.bullets) {
+      const incomingIsAdded = resolveBulletCategory(bullet, group.heading) === 'Added';
+      const existing = survivors.find((survivor) => areBulletsDuplicates(survivor.text, bullet));
+
+      if (!existing) {
+        survivors.push({ heading: group.heading, text: bullet, forcedAdded: incomingIsAdded });
+        continue;
+      }
+
+      // A change made to a capability that was itself only introduced
+      // earlier in this same Unreleased cycle was never released in its
+      // unfixed form – end users only ever see the final behavior. Such a
+      // bullet must never surface as a separate Fixed/Changed entry; it
+      // collapses into the Added entry for that capability.
+      if (incomingIsAdded) {
+        existing.forcedAdded = true;
+      }
+
+      const winner = pickMoreDetailedBullet(existing.text, bullet);
+      if (winner !== existing.text) {
+        existing.text = winner;
+        existing.heading = group.heading;
+      }
+    }
+  }
+
+  const byCategory = new Map();
+  for (const survivor of survivors) {
+    const category = survivor.forcedAdded ? 'Added' : resolveBulletCategory(survivor.text, survivor.heading);
+    if (!byCategory.has(category)) byCategory.set(category, []);
+    byCategory.get(category).push(survivor.text);
+  }
+
+  return CANONICAL_CHANGELOG_CATEGORIES.filter((category) => byCategory.has(category)).map(
+    (category) => ({ heading: category, bullets: byCategory.get(category) })
+  );
+}
+
+function renderChangelogGroups(groups) {
+  return groups
+    .filter((group) => group.bullets && group.bullets.length)
+    .map((group) => [`### ${group.heading}`, ...group.bullets].join('\n'))
+    .join('\n\n');
+}
+
+/**
+ * Deterministic canonicalization pass applied to the fully-merged Unreleased
+ * body: removes cross-section duplicate bullets and normalizes headings to
+ * the canonical Keep a Changelog category set/order. Safe no-op on content
+ * that has no bullets at all (e.g. a body that is somehow pure prose).
+ */
+function canonicalizeChangelogBody(body) {
+  const trimmed = (body || '').trim();
+  if (!trimmed) return trimmed;
+
+  const groups = parseChangelogGroups(trimmed);
+  if (!groups.length) return trimmed;
+
+  const rendered = renderChangelogGroups(dedupeAndCanonicalizeBullets(groups));
+  return rendered || trimmed;
 }
 
 function getDiffStat(ref) {
@@ -611,6 +954,46 @@ function toUtcDateString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function buildCompareUrl(owner, repo, previousRef, tag) {
+  return `https://github.com/${owner}/${repo}/compare/${previousRef}...${tag}`;
+}
+
+/**
+ * Insert or update a Keep a Changelog reference-style link definition
+ * (`[tag]: url`) in the trailing block of such definitions at the end of the
+ * file. Mirrors the newest-first convention already present in these files;
+ * idempotent when called again for a tag that already has an entry.
+ */
+function upsertReleaseLinkReference(content, tag, url) {
+  const newLine = `[${tag}]: ${url}`;
+  const lines = content.split('\n');
+
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === '') {
+    end -= 1;
+  }
+
+  const refLineRe = /^\[[^\]]+\]:\s*\S+$/;
+  let start = end;
+  while (start > 0 && refLineRe.test(lines[start - 1])) {
+    start -= 1;
+  }
+
+  for (let index = start; index < end; index += 1) {
+    if (lines[index].startsWith(`[${tag}]:`)) {
+      lines[index] = newLine;
+      return lines.join('\n');
+    }
+  }
+
+  if (start < end) {
+    lines.splice(start, 0, newLine);
+    return lines.join('\n');
+  }
+
+  return `${content.replace(/\n+$/, '')}\n\n${newLine}\n`;
+}
+
 function upsertUnreleased(content, body) {
   const unreleased = extractUnreleased(content);
   if (unreleased) {
@@ -731,17 +1114,18 @@ ${fullReleaseInstructions}
 
 RULES:
 1. Keep the format user-focused and concise (Keep a Changelog style is preferred).
-2. Preserve any pre-existing information that is already in the Unreleased section – merge intelligently, do not delete useful content.
-3. Group changes under clear headings when appropriate (### Added, ### Changed, ### Fixed, ### Removed, etc.).
+2. Preserve every distinct fact already in the Unreleased section – merge intelligently, do not delete useful content. Pre-existing bullets are NOT sacred, untouchable text, including ones already written in detail by another coding agent: the changelog should be complete but also brief, so TIGHTEN a verbose existing bullet into fewer, clearer sentences whenever you can do so without dropping a distinct fact (every flag/command/option it names, every PR/commit reference, the actual root cause or behavior change). Cut background, rationale, and restated context that doesn't change what a reader needs to know. Only ever make an existing bullet SHORTER, never thinner on facts.
+3. ${buildCategoryRulesText()}
 4. Reference PR numbers when useful (e.g. (#123)).
 5. If a related library has changes that affect users of this project, mention them.
 6. Do NOT restate capabilities that were already described in the most recent release unless the current commit range materially changes or extends them.
 7. Every bullet MUST end with evidence from the current release range, using either \`(#123)\` for a current PR or \`(commit abc1234)\` for a current commit.
-8. CRITICAL – never create a second bullet for a change that an existing bullet in EXISTING UNRELEASED CONTENT already describes, even if you would phrase it differently. Before adding a bullet, check whether it covers the same underlying change (same commit/PR, same behavior) as an existing bullet:
-   - If the existing bullet is thin or vague, REWRITE that same bullet in place with more detail and evidence – do not also emit a separate, differently-worded bullet about the same change.
-   - If the existing bullet is already clear and sufficiently detailed, leave it exactly as written and do not add a rephrased or evidence-only near-duplicate of it.
+8. CRITICAL – never create a second bullet for a change that an existing bullet in EXISTING UNRELEASED CONTENT already describes, even if you would phrase it differently or would naturally file it under a different category heading. Before adding a bullet, check whether it covers the same underlying change (same commit/PR, same behavior, same flag/command) as an existing bullet ANYWHERE in the document, not only under the heading you'd otherwise use for it:
+   - If the existing bullet is thin or vague, REWRITE that same bullet in place with more detail and evidence – do not also emit a separate, differently-worded bullet about the same change under this or any other heading.
+   - If the existing bullet is already clear and sufficiently detailed but VERBOSE, REWRITE it in place to be more concise (see rule 2) – do not also emit a separate, differently-worded bullet about the same change under this or any other heading.
    - Only add a brand-new bullet when it describes a change that no existing bullet already covers.
-9. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
+9. If a change modifies, fixes, or improves a capability that was itself only introduced earlier within THIS SAME Unreleased section (i.e. it has never been released), do NOT add a separate Changed/Fixed bullet for it. That capability was never released in its earlier form, so end users never experienced it as broken – fold the update into the existing Added bullet for that capability instead (rewriting it in place to describe the final, corrected behavior), and do not mention that it was ever otherwise.
+10. Output ONLY the new content that should appear under the "## Unreleased" heading. Do not include the heading itself. Do not wrap the answer in markdown code fences.
 
 EXISTING UNRELEASED CONTENT (preserve / merge):
 ${existingUnreleased || '(empty)'}
@@ -1034,6 +1418,11 @@ async function main() {
     newBody = mergePreservingExistingUnreleased(existingBody, newBody);
   }
 
+  // Deterministic safety net: collapse any cross-section duplicate bullets
+  // the merge above missed, and normalize headings to the canonical Keep a
+  // Changelog category set/order.
+  newBody = canonicalizeChangelogBody(newBody);
+
   core.info('--- Generated Unreleased content ---');
   core.info(newBody);
   core.info('------------------------------------');
@@ -1069,6 +1458,18 @@ async function main() {
     core.setOutput('release-notes', promotion.notes);
     core.setOutput('release-heading', promotion.heading);
     core.setOutput('promoted', String(promotion.promoted));
+
+    if (promotion.promoted) {
+      if (lastTag) {
+        updated = upsertReleaseLinkReference(
+          updated,
+          releaseTag,
+          buildCompareUrl(owner, repo, lastTag, releaseTag)
+        );
+      } else {
+        core.info('No previous tag found; skipping release link reference generation (first-ever release).');
+      }
+    }
 
     const releaseNotesAbsolute = path.join(workspace, releaseNotesPath);
     fs.writeFileSync(releaseNotesAbsolute, `${promotion.notes}\n`, 'utf8');
@@ -1137,4 +1538,20 @@ module.exports = {
   upsertUnreleased,
   promoteUnreleased,
   buildPrompt,
+  CANONICAL_CHANGELOG_CATEGORIES,
+  buildCategoryRulesText,
+  extractCodeSpans,
+  areBulletsDuplicates,
+  pickMoreDetailedBullet,
+  canonicalizeHeadingName,
+  classifyBulletCategory,
+  parseChangelogGroups,
+  dedupeAndCanonicalizeBullets,
+  renderChangelogGroups,
+  canonicalizeChangelogBody,
+  buildCompareUrl,
+  upsertReleaseLinkReference,
+  extractAllFlagSpans,
+  extractEvidenceRefs,
+  preservesAllMarkers,
 };
