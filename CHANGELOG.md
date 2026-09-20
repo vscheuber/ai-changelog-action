@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.12] - 2026-09-20
+
+### Fixed
+- Enforced canonical category usage and improved deduplication across sections to prevent duplication of changelog entries. Links are now correctly restored, ensuring clarity and consistency in changelog documentation. (commit 802dbab)
+
 ## [v1.1.11] - 2026-08-20
 
 ### Added
@@ -158,3 +163,5 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - Initial release of AI Changelog Updater.
 - Composite GitHub Action for LLM-driven `## Unreleased` changelog generation.
+
+[v1.1.12]: https://github.com/vscheuber/ai-changelog-action/compare/v1...v1.1.12
