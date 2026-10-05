@@ -6,6 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## Unreleased
 
+## [v1.1.13] - 2026-10-05
+
+### Changed
+- Internal pipeline update release. This release updates CI/CD or release automation under `.github/` without changing functional behavior.
+
 ## [v1.1.12] - 2026-09-20
 
 ### Fixed
@@ -164,4 +169,5 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Initial release of AI Changelog Updater.
 - Composite GitHub Action for LLM-driven `## Unreleased` changelog generation.
 
+[v1.1.13]: https://github.com/vscheuber/ai-changelog-action/compare/v1...v1.1.13
 [v1.1.12]: https://github.com/vscheuber/ai-changelog-action/compare/v1...v1.1.12
